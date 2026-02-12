@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <a href="index.html">← Home</a>
+
+      <section id="lockSection" class="card">
+        <h1>Admin Access</h1>
+        <p>Enter the shared admin code to unlock admin tools.</p>
+        <form id="unlockForm" class="inline">
+          <input id="adminCodeInput" type="password" required placeholder="Admin code" />
+          <button type="submit">Unlock</button>
+        </form>
+        <p id="lockStatus" class="status"></p>
+      </section>
+
+      <section id="adminPanel" class="grid" style="display: none">
+        <section class="card">
+          <h2>Manage Players</h2>
+          <p class="small subtle">Players can only select names from this list during score entry.</p>
+          <form id="addPlayerForm" class="inline">
+            <input id="newPlayerInput" placeholder="New player name" required />
+            <button type="submit">Add Player</button>
+          </form>
+          <div id="playersList" class="grid"></div>
+        </section>
+
+        <section class="card">
+          <h2>Manage Games</h2>
+          <form id="addGameForm" class="grid">
+            <div class="inline">
+              <input id="gameNameInput" placeholder="Game name" required />
+              <select id="directionInput" required>
+                <option value="higher">Higher is better</option>
+                <option value="lower">Lower is better</option>
+              </select>
+            </div>
+            <div class="inline">
+              <input id="minInput" type="number" step="any" placeholder="Min score" required />
+              <input id="maxInput" type="number" step="any" placeholder="Max score" required />
+            </div>
+            <button type="submit">Add Game</button>
+          </form>
+          <div id="gamesList" class="grid"></div>
+        </section>
+
+        <section class="card">
+          <h2>Admin Score Entry</h2>
+          <p class="small subtle">Use this for players without smartphones.</p>
+          <form id="adminScoreForm" class="grid">
+            <select id="adminPlayerSelect" required></select>
+            <select id="adminGameSelect" required></select>
+            <input id="adminScoreInput" type="number" step="any" required placeholder="Score" />
+            <button type="submit">Submit Score on Behalf</button>
+          </form>
+          <p id="adminScoreStatus" class="status"></p>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+      const store = window.TournamentStore;
+      const state = store.loadState();
+
+      const lockSection = document.getElementById("lockSection");
+      const adminPanel = document.getElementById("adminPanel");
+      const lockStatus = document.getElementById("lockStatus");
+
+      function isUnlocked() {
+        return sessionStorage.getItem("admin_unlocked") === "yes";
+      }
+
+      function setUnlocked(unlocked) {
+        sessionStorage.setItem("admin_unlocked", unlocked ? "yes" : "no");
+      }
+
+      function renderPlayerAndGameSelects() {
+        const pSelect = document.getElementById("adminPlayerSelect");
+        const gSelect = document.getElementById("adminGameSelect");
+        pSelect.innerHTML = state.players.map((p) => `<option value="${p}">${p}</option>`).join("");
+        gSelect.innerHTML = state.games.map((g) => `<option value="${g.name}">${g.name}</option>`).join("");
+      }
+
+      function renderPlayers() {
+        const host = document.getElementById("playersList");
+        host.innerHTML = "";
+        state.players.forEach((player, index) => {
+          const row = document.createElement("div");
+          row.className = "inline";
+          row.innerHTML = `
+            <input value="${player}" aria-label="Player ${index + 1}" />
+            <button type="button" class="secondary">Save</button>
+            <button type="button" class="danger">Delete</button>
+          `;
+          const [input, saveBtn, deleteBtn] = row.children;
+
+          saveBtn.onclick = () => {
+            const next = store.normalizeName(input.value);
+            if (!next) return;
+            const duplicate = state.players.some((p, i) => i !== index && p.toLowerCase() === next.toLowerCase());
+            if (duplicate) return alert("Player name already exists.");
+            state.players[index] = next;
+            store.saveState(state);
+            renderPlayers();
+            renderPlayerAndGameSelects();
+          };
+
+          deleteBtn.onclick = () => {
+            if (!confirm("Delete this player?")) return;
+            state.players.splice(index, 1);
+            store.saveState(state);
+            renderPlayers();
+            renderPlayerAndGameSelects();
+          };
+
+          host.appendChild(row);
+        });
+      }
+
+      function renderGames() {
+        const host = document.getElementById("gamesList");
+        host.innerHTML = "";
+        state.games.forEach((game, index) => {
+          const row = document.createElement("div");
+          row.className = "grid card";
+          row.innerHTML = `
+            <div class="inline">
+              <input value="${game.name}" />
+              <select>
+                <option value="higher" ${game.direction === "higher" ? "selected" : ""}>Higher is better</option>
+                <option value="lower" ${game.direction === "lower" ? "selected" : ""}>Lower is better</option>
+              </select>
+            </div>
+            <div class="inline">
+              <input type="number" step="any" value="${game.min}" />
+              <input type="number" step="any" value="${game.max}" />
+            </div>
+            <div class="inline">
+              <button type="button" class="secondary">Save</button>
+              <button type="button" class="danger">Delete</button>
+            </div>
+          `;
+
+          const nameInput = row.querySelector('input:not([type="number"])');
+          const directionInput = row.querySelector("select");
+          const [minInput, maxInput] = row.querySelectorAll('input[type="number"]');
+          const [saveBtn, deleteBtn] = row.querySelectorAll("button");
+
+          saveBtn.onclick = () => {
+            const name = store.normalizeName(nameInput.value);
+            const min = Number(minInput.value);
+            const max = Number(maxInput.value);
+            if (!name || Number.isNaN(min) || Number.isNaN(max) || min > max) {
+              return alert("Provide valid game name and min/max.");
+            }
+            const duplicate = state.games.some((g, i) => i !== index && g.name.toLowerCase() === name.toLowerCase());
+            if (duplicate) return alert("Game name already exists.");
+            state.games[index] = { name, direction: directionInput.value, min, max };
+            store.saveState(state);
+            renderGames();
+            renderPlayerAndGameSelects();
+          };
+
+          deleteBtn.onclick = () => {
+            if (!confirm("Delete this game?")) return;
+            state.games.splice(index, 1);
+            store.saveState(state);
+            renderGames();
+            renderPlayerAndGameSelects();
+          };
+
+          host.appendChild(row);
+        });
+      }
+
+      document.getElementById("unlockForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const code = document.getElementById("adminCodeInput").value;
+        if (code !== state.adminCode) {
+          lockStatus.textContent = "Incorrect code.";
+          lockStatus.className = "status warn";
+          return;
+        }
+        setUnlocked(true);
+        showAdmin();
+      });
+
+      function showAdmin() {
+        lockSection.style.display = "none";
+        adminPanel.style.display = "grid";
+        renderPlayers();
+        renderGames();
+        renderPlayerAndGameSelects();
+      }
+
+      if (isUnlocked()) showAdmin();
+
+      document.getElementById("addPlayerForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const input = document.getElementById("newPlayerInput");
+        const name = store.normalizeName(input.value);
+        if (!name) return;
+        if (state.players.some((p) => p.toLowerCase() === name.toLowerCase())) {
+          return alert("Player name already exists.");
+        }
+        state.players.push(name);
+        store.saveState(state);
+        input.value = "";
+        renderPlayers();
+        renderPlayerAndGameSelects();
+      });
+
+      document.getElementById("addGameForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = store.normalizeName(document.getElementById("gameNameInput").value);
+        const direction = document.getElementById("directionInput").value;
+        const min = Number(document.getElementById("minInput").value);
+        const max = Number(document.getElementById("maxInput").value);
+
+        if (!name || Number.isNaN(min) || Number.isNaN(max) || min > max) {
+          return alert("Provide valid game name and min/max.");
+        }
+        if (state.games.some((g) => g.name.toLowerCase() === name.toLowerCase())) {
+          return alert("Game name already exists.");
+        }
+
+        state.games.push({ name, direction, min, max });
+        store.saveState(state);
+        e.target.reset();
+        renderGames();
+        renderPlayerAndGameSelects();
+      });
+
+      document.getElementById("adminScoreForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const player = document.getElementById("adminPlayerSelect").value;
+        const gameName = document.getElementById("adminGameSelect").value;
+        const score = Number(document.getElementById("adminScoreInput").value);
+        const status = document.getElementById("adminScoreStatus");
+        if (!player || !gameName || Number.isNaN(score)) return;
+
+        state.submissions.push({
+          player,
+          game: gameName,
+          score,
+          enteredBy: "admin",
+          createdAt: new Date().toISOString(),
+        });
+        store.saveState(state);
+        status.textContent = "Admin score submitted.";
+        status.className = "status ok";
+        e.target.reset();
+        renderPlayerAndGameSelects();
+      });
+    </script>
+  </body>
+</html>
