@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Submit Score</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <a href="index.html">← Home</a>
+      <section class="card">
+        <h1>Submit Score</h1>
+        <p class="subtle">Pick your player name and game from the approved lists.</p>
+
+        <form id="scoreForm" class="grid">
+          <div>
+            <label for="playerSelect">Player</label>
+            <select id="playerSelect" required></select>
+          </div>
+          <div>
+            <label for="gameSelect">Game</label>
+            <select id="gameSelect" required></select>
+          </div>
+          <div>
+            <label for="scoreInput">Score</label>
+            <input id="scoreInput" type="number" step="any" required />
+          </div>
+          <button type="submit">Submit Score</button>
+        </form>
+        <p id="status" class="status"></p>
+      </section>
+    </main>
+
+    <div id="rangeModal" class="modal-backdrop" role="dialog" aria-modal="true">
+      <div class="card modal">
+        <h3>Score is outside expected range</h3>
+        <p id="rangeText"></p>
+        <div class="inline">
+          <button id="fixBtn" class="secondary" type="button">Fix it</button>
+          <button id="submitAnywayBtn" type="button">Submit anyway</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      const store = window.TournamentStore;
+      const state = store.loadState();
+      const playerSelect = document.getElementById("playerSelect");
+      const gameSelect = document.getElementById("gameSelect");
+      const form = document.getElementById("scoreForm");
+      const scoreInput = document.getElementById("scoreInput");
+      const status = document.getElementById("status");
+
+      function fillSelect(select, values) {
+        select.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "-- Select --";
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        select.appendChild(placeholder);
+
+        values.forEach((value) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          select.appendChild(option);
+        });
+      }
+
+      fillSelect(playerSelect, state.players);
+      fillSelect(gameSelect, state.games.map((g) => g.name));
+
+      function saveSubmission(force = false) {
+        const player = playerSelect.value;
+        const gameName = gameSelect.value;
+        const score = Number(scoreInput.value);
+        const game = state.games.find((g) => g.name === gameName);
+        if (!player || !gameName || Number.isNaN(score)) return;
+
+        if (!force && (score < game.min || score > game.max)) {
+          const modal = document.getElementById("rangeModal");
+          document.getElementById(
+            "rangeText"
+          ).textContent = `Expected range for ${game.name} is ${game.min} to ${game.max}.`;
+          modal.classList.add("show");
+          document.getElementById("fixBtn").onclick = () => modal.classList.remove("show");
+          document.getElementById("submitAnywayBtn").onclick = () => {
+            modal.classList.remove("show");
+            saveSubmission(true);
+          };
+          return;
+        }
+
+        state.submissions.push({
+          player,
+          game: gameName,
+          score,
+          enteredBy: "player",
+          createdAt: new Date().toISOString(),
+        });
+        store.saveState(state);
+        status.textContent = "Score submitted successfully.";
+        status.className = "status ok";
+        form.reset();
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        saveSubmission(false);
+      });
+
+      if (!state.players.length || !state.games.length) {
+        status.textContent = "Admin must add players and games before scoring can begin.";
+        status.className = "status warn";
+      }
+    </script>
+  </body>
+</html>
