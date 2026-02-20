@@ -56,6 +56,20 @@ function normalizeName(name) {
   return String(name || "").trim();
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getLogoUrl(game) {
+  const candidate = typeof game?.logoUrl === "string" ? game.logoUrl.trim() : "";
+  return candidate || "";
+}
+
 function getBestScoresByGame(state) {
   const result = {};
 
@@ -121,11 +135,77 @@ function getOverallStandings(state) {
     .sort((a, b) => b.points - a.points || a.player.localeCompare(b.player));
 }
 
+function renderTVPage() {
+  const host = document.getElementById("tvGrid");
+  const updatedEl = document.getElementById("lastUpdated");
+  if (!host || !updatedEl) {
+    return;
+  }
+
+  const state = loadState();
+  const bestByGame = getBestScoresByGame(state);
+  host.innerHTML = "";
+
+  state.games.forEach((game) => {
+    const logoUrl = getLogoUrl(game);
+    const top3 = (bestByGame[game.name] || []).slice(0, 3);
+    const scoresHtml = top3.length
+      ? top3
+          .map(
+            (entry, idx) =>
+              `<li><span class="rank">#${idx + 1}</span><span class="player">${escapeHtml(
+                entry.player
+              )}</span><span class="score">${entry.score}</span></li>`
+          )
+          .join("")
+      : '<li class="empty">No scores yet</li>';
+
+    const logoHtml = logoUrl
+      ? `<img class="tv-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(game.name)} logo" loading="lazy" />`
+      : `<div class="tv-logo tv-logo-placeholder" aria-label="No logo available">${escapeHtml(
+          game.name
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((chunk) => chunk[0]?.toUpperCase() || "")
+            .join("") || "🎮"
+        )}</div>`;
+
+    const card = document.createElement("article");
+    card.className = "tv-card";
+    card.innerHTML = `
+      <h2>${escapeHtml(game.name)}</h2>
+      <div class="tv-logo-wrap">${logoHtml}</div>
+      <p class="tv-direction">${
+        game.direction === "higher" ? "Higher score wins" : "Lower score wins"
+      }</p>
+      <ol class="tv-scores">${scoresHtml}</ol>
+    `;
+    host.appendChild(card);
+  });
+
+  updatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+}
+
+function initTVPage() {
+  if (!document.getElementById("tvGrid")) {
+    return;
+  }
+  renderTVPage();
+  window.setInterval(renderTVPage, 20000);
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", initTVPage);
+}
+
 window.TournamentStore = {
   loadState,
   saveState,
   normalizeName,
+  getLogoUrl,
   getBestScoresByGame,
   calculateGamePoints,
   getOverallStandings,
+  renderTVPage,
 };
