@@ -16,6 +16,7 @@
           <input id="adminCodeInput" type="password" required placeholder="Admin code" />
           <button type="submit">Unlock</button>
         </form>
+        <p id="lockStatus" class="status"></p>
       </section>
 
       <section id="revealSection" class="card" style="display:none;">
@@ -64,7 +65,14 @@
 
       document.getElementById("unlockForm").addEventListener("submit", (e) => {
         e.preventDefault();
-        if (document.getElementById("adminCodeInput").value !== state.adminCode) return;
+        const code = document.getElementById("adminCodeInput").value;
+        const lockStatus = document.getElementById("lockStatus");
+        if (code !== state.adminCode) {
+          lockStatus.textContent = "Incorrect code.";
+          lockStatus.className = "status warn";
+          return;
+        }
+        lockStatus.textContent = "";
         document.getElementById("lockSection").style.display = "none";
         document.getElementById("revealSection").style.display = "block";
         renderRevealState();

@@ -191,7 +191,14 @@
 
       document.getElementById("unlockForm").addEventListener("submit", (e) => {
         e.preventDefault();
-        if (document.getElementById("adminCodeInput").value !== state.adminCode) return;
+        const code = document.getElementById("adminCodeInput").value;
+        const lockStatus = document.getElementById("lockStatus");
+        if (code !== state.adminCode) {
+          lockStatus.textContent = "Incorrect code.";
+          lockStatus.className = "status warn";
+          return;
+        }
+        lockStatus.textContent = "";
         setUnlocked(true);
         showAdmin();
       });
