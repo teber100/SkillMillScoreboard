@@ -3,16 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Game Leaderboards</title>
+    <title>Leaderboards</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="container">
       <a href="index.html">← Home</a>
+      <section class="card">
+        <h1>Overall Standings</h1>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Player</th>
+                <th>Total Points</th>
+              </tr>
+            </thead>
+            <tbody id="overallBody"></tbody>
+          </table>
+        </div>
+      </section>
 
       <section class="card">
-        <h1>Per-Game Leaderboards</h1>
-        <p class="subtle">Overall standings are admin-only and hidden from public view.</p>
+        <h2>Per-Game Leaderboards</h2>
         <div id="gameBoards" class="grid"></div>
       </section>
     </main>
@@ -21,6 +35,14 @@
     <script>
       const store = window.TournamentStore;
       const state = store.loadState();
+
+      const overall = store.getOverallStandings(state);
+      const overallBody = document.getElementById("overallBody");
+      overall.forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${idx + 1}</td><td>${row.player}</td><td>${row.points}</td>`;
+        overallBody.appendChild(tr);
+      });
 
       const bestByGame = store.getBestScoresByGame(state);
       const gameBoards = document.getElementById("gameBoards");

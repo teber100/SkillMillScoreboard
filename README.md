@@ -1,29 +1,114 @@
 # SkillMill Arcade Tournament (Simple Website)
 
-Simple mobile-friendly site for running a local arcade tournament.
+This is a very simple, mobile-friendly website for running a local arcade tournament with ~20–30 friends.
 
-## Pages
-- `/index.html` — Home menu (use this for your single QR code)
-- `/submit.html` — Player score entry
-- `/tv.html` — TV display (all games, logo, Top 3, auto-refresh every 20s)
-- `/leaderboards.html` — Public per-game leaderboards only
-- `/admin.html` — Admin tools (players, games, logo URLs, admin score entry, reveal toggle)
-- `/results.html` — Admin-only overall standings
+## What this site does
 
-## TV mode instructions
-1. Open `/tv.html` on the TV-connected browser.
-2. Full-screen the browser:
-   - Windows: `F11`
-   - Mac: `Ctrl + Cmd + F`
-3. Leave it open; it refreshes every 20 seconds.
+- One shared URL/QR code for everyone.
+- Players submit scores by selecting:
+  - player name (from dropdown)
+  - game (from dropdown)
+  - score (number)
+- No individual logins.
+- Admin page protected by one shared admin code.
+- Per-game leaderboard and overall standings with points.
 
-## Add game logos quickly
-1. Open `/admin.html` and unlock with admin code (`2468` by default).
-2. In **Manage Games**, paste a logo image URL.
-3. Click **Save** on that game.
-4. If no logo URL is set, TV mode shows a placeholder.
+## How scoring works
 
-## Keep overall winner secret
-- Public pages do not show overall standings.
-- Use `/admin.html` → **Overall Results Controls** to toggle reveal ON/OFF.
-- Use `/results.html` (admin code required) to display overall standings.
+1. A player can submit multiple scores for the same game.
+2. Only the **best** score per player per game counts:
+   - **Higher-is-better** games: highest score counts.
+   - **Lower-is-better** games: lowest score counts.
+3. Per-game points:
+   - If `K` players have a score in that game:
+   - 1st place = `K` points, 2nd = `K-1`, ..., last = `1`.
+4. Ties use standard competition ranking:
+   - Tied players share the same rank and same points.
+   - Next rank is skipped.
+5. Overall standings = total points across all games.
+
+## Admin code (important)
+
+Default admin code is: **2468**
+
+To change it, open `app.js` and edit:
+
+- `DEFAULT_ADMIN_CODE = "2468"`
+
+Then redeploy.
+
+## Pages and what they are for
+
+- `/index.html` (Home)
+  - Main menu page linked from your QR code.
+- `/submit.html` (Player score entry)
+  - Players submit scores.
+  - If score is outside expected min/max for a game, site shows warning and asks:
+    - **Fix it**
+    - **Submit anyway**
+- `/leaderboards.html` (Public standings)
+  - Overall standings (total points).
+  - Per-game rankings, best score, points.
+- `/admin.html` (Admin tools)
+  - Enter shared admin code to unlock.
+  - Add/edit/delete players.
+  - Add/edit/delete games (name, higher/lower, min/max).
+  - Submit scores on behalf of players.
+
+## Click-by-click: Publish on Vercel with GitHub (non-coder guide)
+
+### Part A — Put this project in GitHub
+
+1. Create a GitHub account (if you don’t have one): <https://github.com>
+2. Click **New repository**.
+3. Name it something like `arcade-tournament`.
+4. Set it to Public or Private (your choice).
+5. Click **Create repository**.
+6. Upload these files into that repo.
+   - Easiest way: click **Add file** → **Upload files**, drag all project files, commit.
+
+### Part B — Deploy on Vercel
+
+1. Go to <https://vercel.com> and log in (or create account).
+2. Click **Add New...** → **Project**.
+3. Connect your GitHub account (if prompted).
+4. Select your repository.
+5. Vercel detects this as a static site automatically.
+6. Click **Deploy**.
+7. Wait for build/deploy to finish.
+8. Click **Visit** to open your live website.
+
+### Part C — Make the single QR code
+
+1. Copy your Vercel live URL (for example, `https://your-site.vercel.app`).
+2. Use any QR generator website.
+3. Create one QR code pointing to your main URL (`/index.html` or root URL).
+4. Print and place it in your arcade space.
+
+## Tournament setup checklist (recommended)
+
+1. Open `/admin.html`.
+2. Enter admin code.
+3. Add all player names first.
+4. Verify/edit the 17 games.
+5. Set game directions correctly:
+   - Most games: Higher is better.
+   - Golden Tee: Lower is better.
+6. Set realistic min/max ranges per game.
+7. Optionally submit a test score.
+8. Open `/leaderboards.html` to verify it looks right.
+9. Start tournament.
+
+## During tournament operations
+
+- Players use only `/submit.html`.
+- Admin uses `/admin.html` to:
+  - fix typos in names
+  - tune game ranges
+  - enter scores for players without phones
+- Anyone can view `/leaderboards.html`.
+
+## Notes
+
+- Data is stored in each browser’s local storage.
+- If you want one shared database across all phones, you’ll need a backend (not included in this simple version).
