@@ -8,7 +8,12 @@
   </head>
   <body>
     <main class="container">
-      <a href="index.html">← Home</a>
+      <nav class="top-nav" aria-label="Site navigation">
+        <a href="index.html">Home</a>
+        <a href="submit.html">Submit</a>
+        <a href="leaderboards.html">Leaderboards</a>
+        <a href="tv.html">TV Display</a>
+      </nav>
       <section class="card">
         <h1>Submit Score</h1>
         <p class="subtle">Pick your player name and game from the approved lists.</p>
@@ -78,7 +83,7 @@
         const gameName = gameSelect.value;
         const score = Number(scoreInput.value);
         const game = state.games.find((g) => g.name === gameName);
-        if (!player || !gameName || Number.isNaN(score)) return;
+        if (!player || !gameName || Number.isNaN(score) || !game) return;
 
         if (!force && (score < game.min || score > game.max)) {
           const modal = document.getElementById("rangeModal");

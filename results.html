@@ -8,7 +8,12 @@
   </head>
   <body>
     <main class="container">
-      <a href="index.html">← Home</a>
+      <nav class="top-nav" aria-label="Site navigation">
+        <a href="index.html">Home</a>
+        <a href="leaderboards.html">Leaderboards</a>
+        <a href="tv.html">TV Display</a>
+        <a href="admin.html">Admin</a>
+      </nav>
 
       <section id="lockSection" class="card">
         <h1>Admin Results Access</h1>
@@ -19,17 +24,23 @@
         <p id="lockStatus" class="status"></p>
       </section>
 
-      <section id="revealSection" class="card" style="display:none;">
+      <section id="revealSection" class="card" style="display: none">
         <h2>Overall Standings Controls</h2>
         <p id="revealHint" class="subtle"></p>
         <button id="revealBtn" type="button"></button>
       </section>
 
-      <section id="resultsSection" class="card" style="display:none;">
+      <section id="resultsSection" class="card" style="display: none">
         <h2>Overall Standings</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Rank</th><th>Player</th><th>Total Points</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Player</th>
+                <th>Total Points</th>
+              </tr>
+            </thead>
             <tbody id="overallBody"></tbody>
           </table>
         </div>

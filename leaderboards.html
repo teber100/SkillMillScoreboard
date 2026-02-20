@@ -8,7 +8,12 @@
   </head>
   <body>
     <main class="container">
-      <a href="index.html">← Home</a>
+      <nav class="top-nav" aria-label="Site navigation">
+        <a href="index.html">Home</a>
+        <a href="submit.html">Submit</a>
+        <a href="leaderboards.html">Leaderboards</a>
+        <a href="tv.html">TV Display</a>
+      </nav>
       <section class="card">
         <h1>Overall Standings</h1>
         <div class="table-wrap">
@@ -61,7 +66,7 @@
           : '<tr><td colspan="4" class="subtle">No scores yet.</td></tr>';
 
         wrapped.innerHTML = `
-          <h3>${game.name}</h3>
+          <h3>${store.escapeHtml(game.name)}</h3>
           <p class="small subtle">${
             game.direction === "higher" ? "Higher score wins" : "Lower score wins"
           } • Expected range: ${game.min} to ${game.max}</p>

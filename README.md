@@ -112,3 +112,11 @@ Then redeploy.
 
 - Data is stored in each browser’s local storage.
 - If you want one shared database across all phones, you’ll need a backend (not included in this simple version).
+
+
+## TV display and game logos
+
+- Open `/admin.html`, unlock admin, then add or edit games to set a **Logo URL (optional)**.
+- Each game row shows a small preview of the current logo; if no URL is set (or the URL fails), the app uses a built-in placeholder image.
+- Open `/tv.html` for the TV mode view. It shows **Top 3 per game only** (no overall standings) and auto-refreshes every 20 seconds.
+- For a full-screen display, open `/tv.html` on the TV device and use browser full-screen mode (usually `F11` or presentation mode).

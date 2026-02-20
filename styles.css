@@ -284,3 +284,39 @@ td {
   grid-template-columns: 1fr;
   color: #bfd0ef;
 }
+
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.top-nav a {
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--brand);
+  background: #eaf1ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+}
+
+.top-nav-tv a {
+  color: #d2e1ff;
+  background: #132646;
+  border-color: #264a86;
+}
+
+.game-logo-row {
+  align-items: center;
+}
+
+.game-logo-preview {
+  width: 84px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #f2f6ff;
+  flex: 0 0 auto;
+}
