@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Leaderboards</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <a href="index.html">← Home</a>
+
+      <section class="card">
+        <h1>Per-Game Leaderboards</h1>
+        <p class="subtle">Overall standings are admin-only and hidden from public view.</p>
+        <div id="gameBoards" class="grid"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+      const store = window.TournamentStore;
+      const state = store.loadState();
+
+      const bestByGame = store.getBestScoresByGame(state);
+      const gameBoards = document.getElementById("gameBoards");
+
+      state.games.forEach((game) => {
+        const wrapped = document.createElement("div");
+        wrapped.className = "card";
+        const rows = store.calculateGamePoints(bestByGame[game.name] || []);
+        const body = rows.length
+          ? rows
+              .map(
+                (row) =>
+                  `<tr><td>${row.rank}</td><td>${row.player}</td><td>${row.score}</td><td>${row.points}</td></tr>`
+              )
+              .join("")
+          : '<tr><td colspan="4" class="subtle">No scores yet.</td></tr>';
+
+        wrapped.innerHTML = `
+          <h3>${game.name}</h3>
+          <p class="small subtle">${
+            game.direction === "higher" ? "Higher score wins" : "Lower score wins"
+          } • Expected range: ${game.min} to ${game.max}</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Rank</th><th>Player</th><th>Best Score</th><th>Points</th></tr>
+              </thead>
+              <tbody>${body}</tbody>
+            </table>
+          </div>
+        `;
+        gameBoards.appendChild(wrapped);
+      });
+    </script>
+  </body>
+</html>

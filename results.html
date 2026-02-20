@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Results</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <a href="index.html">← Home</a>
+
+      <section id="lockSection" class="card">
+        <h1>Admin Results Access</h1>
+        <form id="unlockForm" class="inline">
+          <input id="adminCodeInput" type="password" required placeholder="Admin code" />
+          <button type="submit">Unlock</button>
+        </form>
+      </section>
+
+      <section id="revealSection" class="card" style="display:none;">
+        <h2>Overall Standings Controls</h2>
+        <p id="revealHint" class="subtle"></p>
+        <button id="revealBtn" type="button"></button>
+      </section>
+
+      <section id="resultsSection" class="card" style="display:none;">
+        <h2>Overall Standings</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Rank</th><th>Player</th><th>Total Points</th></tr></thead>
+            <tbody id="overallBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+      const store = window.TournamentStore;
+      const state = store.loadState();
+
+      function renderStandings() {
+        const body = document.getElementById("overallBody");
+        body.innerHTML = "";
+        store.getOverallStandings(store.loadState()).forEach((row, idx) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${idx + 1}</td><td>${row.player}</td><td>${row.points}</td>`;
+          body.appendChild(tr);
+        });
+      }
+
+      function renderRevealState() {
+        const on = state.overallRevealed === true;
+        document.getElementById("revealHint").textContent = on
+          ? "Overall results are currently revealed."
+          : "Overall results are currently hidden (default).";
+        const btn = document.getElementById("revealBtn");
+        btn.textContent = on ? "Hide Overall Results" : "Reveal Overall Results";
+        btn.className = on ? "danger" : "secondary";
+        document.getElementById("resultsSection").style.display = on ? "block" : "none";
+        if (on) renderStandings();
+      }
+
+      document.getElementById("unlockForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (document.getElementById("adminCodeInput").value !== state.adminCode) return;
+        document.getElementById("lockSection").style.display = "none";
+        document.getElementById("revealSection").style.display = "block";
+        renderRevealState();
+      });
+
+      document.getElementById("revealBtn").addEventListener("click", () => {
+        state.overallRevealed = !state.overallRevealed;
+        store.saveState(state);
+        renderRevealState();
+      });
+    </script>
+  </body>
+</html>
