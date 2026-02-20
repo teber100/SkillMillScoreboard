@@ -12,47 +12,9 @@
         <h1>Arcade Tournament — Live Game Boards</h1>
         <p id="lastUpdated" class="tv-updated"></p>
       </header>
-      <section id="tvGrid" class="tv-grid"></section>
+      <section id="tvGrid" class="tv-grid" aria-live="polite"></section>
     </main>
 
     <script src="app.js"></script>
-    <script>
-      const store = window.TournamentStore;
-
-      function renderTV() {
-        const state = store.loadState();
-        const bestByGame = store.getBestScoresByGame(state);
-        const host = document.getElementById("tvGrid");
-        host.innerHTML = "";
-
-        state.games.forEach((game) => {
-          const top3 = (bestByGame[game.name] || []).slice(0, 3);
-          const rows =
-            top3.length > 0
-              ? top3
-                  .map(
-                    (entry, idx) =>
-                      `<li><span class="rank">#${idx + 1}</span><span class="player">${entry.player}</span><span class="score">${entry.score}</span></li>`
-                  )
-                  .join("")
-              : `<li class="empty">No scores yet</li>`;
-
-          const card = document.createElement("article");
-          card.className = "tv-card";
-          card.innerHTML = `
-            <h2>${game.name}</h2>
-            <div class="tv-logo-wrap"><img class="tv-logo" src="${store.getLogoUrl(game)}" alt="${game.name} logo" /></div>
-            <p class="tv-direction">${game.direction === "higher" ? "Higher score wins" : "Lower score wins"}</p>
-            <ol class="tv-scores">${rows}</ol>
-          `;
-          host.appendChild(card);
-        });
-
-        document.getElementById("lastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`;
-      }
-
-      renderTV();
-      setInterval(renderTV, 20000);
-    </script>
   </body>
 </html>
