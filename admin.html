@@ -8,7 +8,13 @@
   </head>
   <body>
     <main class="container">
-      <a href="index.html">← Home</a>
+      <nav class="top-nav" aria-label="Site navigation">
+        <a href="index.html">Home</a>
+        <a href="submit.html">Submit</a>
+        <a href="leaderboards.html">Leaderboards</a>
+        <a href="tv.html">TV Display</a>
+        <a href="admin.html">Admin</a>
+      </nav>
 
       <section id="lockSection" class="card">
         <h1>Admin Access</h1>
@@ -45,6 +51,7 @@
               <input id="minInput" type="number" step="any" placeholder="Min score" required />
               <input id="maxInput" type="number" step="any" placeholder="Max score" required />
             </div>
+            <input id="logoUrlInput" placeholder="Logo URL (optional)" />
             <button type="submit">Add Game</button>
           </form>
           <div id="gamesList" class="grid"></div>
@@ -68,6 +75,11 @@
     <script>
       const store = window.TournamentStore;
       const state = store.loadState();
+      const fallbackLogo =
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="100%" height="100%" fill="#0f1a30"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#8fb0f0" font-size="30" font-family="Arial">🎮</text></svg>'
+        );
 
       const lockSection = document.getElementById("lockSection");
       const adminPanel = document.getElementById("adminPanel");
@@ -79,6 +91,10 @@
 
       function setUnlocked(unlocked) {
         sessionStorage.setItem("admin_unlocked", unlocked ? "yes" : "no");
+      }
+
+      function isImageUrl(url) {
+        return /^(https?:\/\/|data:image\/)/i.test(url);
       }
 
       function renderPlayerAndGameSelects() {
@@ -95,7 +111,7 @@
           const row = document.createElement("div");
           row.className = "inline";
           row.innerHTML = `
-            <input value="${player}" aria-label="Player ${index + 1}" />
+            <input value="${store.escapeHtml(player)}" aria-label="Player ${index + 1}" />
             <button type="button" class="secondary">Save</button>
             <button type="button" class="danger">Delete</button>
           `;
@@ -130,9 +146,10 @@
         state.games.forEach((game, index) => {
           const row = document.createElement("div");
           row.className = "grid card";
+          const logoUrl = store.getLogoUrl(game);
           row.innerHTML = `
             <div class="inline">
-              <input value="${game.name}" />
+              <input value="${store.escapeHtml(game.name)}" />
               <select>
                 <option value="higher" ${game.direction === "higher" ? "selected" : ""}>Higher is better</option>
                 <option value="lower" ${game.direction === "lower" ? "selected" : ""}>Lower is better</option>
@@ -142,27 +159,41 @@
               <input type="number" step="any" value="${game.min}" />
               <input type="number" step="any" value="${game.max}" />
             </div>
+            <div class="inline game-logo-row">
+              <input class="logo-url-input" placeholder="Logo URL (optional)" value="${store.escapeHtml(logoUrl)}" />
+              <img class="game-logo-preview" alt="${store.escapeHtml(game.name)} logo preview" src="${
+            isImageUrl(logoUrl) ? store.escapeHtml(logoUrl) : fallbackLogo
+          }" onerror="this.src='${fallbackLogo}'" />
+            </div>
             <div class="inline">
               <button type="button" class="secondary">Save</button>
               <button type="button" class="danger">Delete</button>
             </div>
           `;
 
-          const nameInput = row.querySelector('input:not([type="number"])');
+          const nameInput = row.querySelector('input:not([type="number"]):not(.logo-url-input)');
           const directionInput = row.querySelector("select");
           const [minInput, maxInput] = row.querySelectorAll('input[type="number"]');
+          const logoInput = row.querySelector(".logo-url-input");
+          const preview = row.querySelector(".game-logo-preview");
           const [saveBtn, deleteBtn] = row.querySelectorAll("button");
+
+          logoInput.addEventListener("input", () => {
+            const url = store.getLogoUrl({ logoUrl: logoInput.value });
+            preview.src = isImageUrl(url) ? url : fallbackLogo;
+          });
 
           saveBtn.onclick = () => {
             const name = store.normalizeName(nameInput.value);
             const min = Number(minInput.value);
             const max = Number(maxInput.value);
+            const logoUrlValue = store.getLogoUrl({ logoUrl: logoInput.value });
             if (!name || Number.isNaN(min) || Number.isNaN(max) || min > max) {
               return alert("Provide valid game name and min/max.");
             }
             const duplicate = state.games.some((g, i) => i !== index && g.name.toLowerCase() === name.toLowerCase());
             if (duplicate) return alert("Game name already exists.");
-            state.games[index] = { name, direction: directionInput.value, min, max };
+            state.games[index] = { name, direction: directionInput.value, min, max, logoUrl: logoUrlValue };
             store.saveState(state);
             renderGames();
             renderPlayerAndGameSelects();
@@ -223,6 +254,7 @@
         const direction = document.getElementById("directionInput").value;
         const min = Number(document.getElementById("minInput").value);
         const max = Number(document.getElementById("maxInput").value);
+        const logoUrl = store.getLogoUrl({ logoUrl: document.getElementById("logoUrlInput").value });
 
         if (!name || Number.isNaN(min) || Number.isNaN(max) || min > max) {
           return alert("Provide valid game name and min/max.");
@@ -231,7 +263,7 @@
           return alert("Game name already exists.");
         }
 
-        state.games.push({ name, direction, min, max });
+        state.games.push({ name, direction, min, max, logoUrl });
         store.saveState(state);
         e.target.reset();
         renderGames();

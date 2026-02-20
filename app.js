@@ -2,23 +2,23 @@ const STORAGE_KEY = "skillmill_tournament_v1";
 const DEFAULT_ADMIN_CODE = "2468";
 
 const defaultGames = [
-  { name: "Pac-Man", direction: "higher", min: 0, max: 300000 },
-  { name: "Galaga", direction: "higher", min: 0, max: 999999 },
-  { name: "Donkey Kong", direction: "higher", min: 0, max: 250000 },
-  { name: "Street Fighter II", direction: "higher", min: 0, max: 99 },
-  { name: "NBA Jam", direction: "higher", min: 0, max: 200 },
-  { name: "Mortal Kombat", direction: "higher", min: 0, max: 99 },
-  { name: "Pinball", direction: "higher", min: 0, max: 5000000 },
-  { name: "Skee-Ball", direction: "higher", min: 0, max: 100000 },
-  { name: "Air Hockey", direction: "higher", min: 0, max: 21 },
-  { name: "Mario Kart", direction: "higher", min: 0, max: 15 },
-  { name: "Daytona USA", direction: "higher", min: 0, max: 9999 },
-  { name: "Time Crisis", direction: "higher", min: 0, max: 999999 },
-  { name: "Dance Dance Revolution", direction: "higher", min: 0, max: 1000000 },
-  { name: "Whac-A-Mole", direction: "higher", min: 0, max: 1000 },
-  { name: "Big Buck Hunter", direction: "higher", min: 0, max: 99999 },
-  { name: "Golden Tee", direction: "lower", min: -30, max: 30 },
-  { name: "Tetris", direction: "higher", min: 0, max: 999999 },
+  { name: "Pac-Man", direction: "higher", min: 0, max: 300000, logoUrl: "" },
+  { name: "Galaga", direction: "higher", min: 0, max: 999999, logoUrl: "" },
+  { name: "Donkey Kong", direction: "higher", min: 0, max: 250000, logoUrl: "" },
+  { name: "Street Fighter II", direction: "higher", min: 0, max: 99, logoUrl: "" },
+  { name: "NBA Jam", direction: "higher", min: 0, max: 200, logoUrl: "" },
+  { name: "Mortal Kombat", direction: "higher", min: 0, max: 99, logoUrl: "" },
+  { name: "Pinball", direction: "higher", min: 0, max: 5000000, logoUrl: "" },
+  { name: "Skee-Ball", direction: "higher", min: 0, max: 100000, logoUrl: "" },
+  { name: "Air Hockey", direction: "higher", min: 0, max: 21, logoUrl: "" },
+  { name: "Mario Kart", direction: "higher", min: 0, max: 15, logoUrl: "" },
+  { name: "Daytona USA", direction: "higher", min: 0, max: 9999, logoUrl: "" },
+  { name: "Time Crisis", direction: "higher", min: 0, max: 999999, logoUrl: "" },
+  { name: "Dance Dance Revolution", direction: "higher", min: 0, max: 1000000, logoUrl: "" },
+  { name: "Whac-A-Mole", direction: "higher", min: 0, max: 1000, logoUrl: "" },
+  { name: "Big Buck Hunter", direction: "higher", min: 0, max: 99999, logoUrl: "" },
+  { name: "Golden Tee", direction: "lower", min: -30, max: 30, logoUrl: "" },
+  { name: "Tetris", direction: "higher", min: 0, max: 999999, logoUrl: "" },
 ];
 
 const defaultState = {
@@ -26,31 +26,8 @@ const defaultState = {
   players: ["Alex", "Jamie", "Riley"],
   games: defaultGames,
   submissions: [],
+  overallRevealed: false,
 };
-
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
-    return structuredClone(defaultState);
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      adminCode: parsed.adminCode || DEFAULT_ADMIN_CODE,
-      players: Array.isArray(parsed.players) ? parsed.players : [],
-      games: Array.isArray(parsed.games) ? parsed.games : [],
-      submissions: Array.isArray(parsed.submissions) ? parsed.submissions : [],
-    };
-  } catch {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
-    return structuredClone(defaultState);
-  }
-}
-
-function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
 
 function normalizeName(name) {
   return String(name || "").trim();
@@ -68,6 +45,54 @@ function escapeHtml(value) {
 function getLogoUrl(game) {
   const candidate = typeof game?.logoUrl === "string" ? game.logoUrl.trim() : "";
   return candidate || "";
+}
+
+function getGameInitials(name) {
+  return (
+    normalizeName(name)
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((chunk) => chunk[0]?.toUpperCase() || "")
+      .join("") || "🎮"
+  );
+}
+
+function normalizeGame(game) {
+  const source = game || {};
+  return {
+    name: normalizeName(source.name),
+    direction: source.direction === "lower" ? "lower" : "higher",
+    min: Number.isFinite(Number(source.min)) ? Number(source.min) : 0,
+    max: Number.isFinite(Number(source.max)) ? Number(source.max) : 0,
+    logoUrl: getLogoUrl(source),
+  };
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
+    return structuredClone(defaultState);
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const nextState = {
+      adminCode: parsed.adminCode || DEFAULT_ADMIN_CODE,
+      players: Array.isArray(parsed.players) ? parsed.players.map(normalizeName).filter(Boolean) : [],
+      games: Array.isArray(parsed.games) ? parsed.games.map(normalizeGame).filter((g) => g.name) : [],
+      submissions: Array.isArray(parsed.submissions) ? parsed.submissions : [],
+      overallRevealed: parsed.overallRevealed === true,
+    };
+    return nextState;
+  } catch {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
+    return structuredClone(defaultState);
+  }
+}
+
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 function getBestScoresByGame(state) {
@@ -163,12 +188,7 @@ function renderTVPage() {
     const logoHtml = logoUrl
       ? `<img class="tv-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(game.name)} logo" loading="lazy" />`
       : `<div class="tv-logo tv-logo-placeholder" aria-label="No logo available">${escapeHtml(
-          game.name
-            .split(/\s+/)
-            .filter(Boolean)
-            .slice(0, 2)
-            .map((chunk) => chunk[0]?.toUpperCase() || "")
-            .join("") || "🎮"
+          getGameInitials(game.name)
         )}</div>`;
 
     const card = document.createElement("article");
@@ -204,8 +224,10 @@ window.TournamentStore = {
   saveState,
   normalizeName,
   getLogoUrl,
+  getGameInitials,
   getBestScoresByGame,
   calculateGamePoints,
   getOverallStandings,
   renderTVPage,
+  escapeHtml,
 };
