@@ -74,7 +74,6 @@
     <script src="app.js"></script>
     <script>
       const store = window.TournamentStore;
-      const state = store.loadState();
       const fallbackLogo =
         "data:image/svg+xml;utf8," +
         encodeURIComponent(
@@ -84,6 +83,8 @@
       const lockSection = document.getElementById("lockSection");
       const adminPanel = document.getElementById("adminPanel");
       const lockStatus = document.getElementById("lockStatus");
+      const adminScoreStatus = document.getElementById("adminScoreStatus");
+      let state = null;
 
       function isUnlocked() {
         return sessionStorage.getItem("admin_unlocked") === "yes";
@@ -100,40 +101,58 @@
       function renderPlayerAndGameSelects() {
         const pSelect = document.getElementById("adminPlayerSelect");
         const gSelect = document.getElementById("adminGameSelect");
-        pSelect.innerHTML = state.players.map((p) => `<option value="${p}">${p}</option>`).join("");
-        gSelect.innerHTML = state.games.map((g) => `<option value="${g.name}">${g.name}</option>`).join("");
+        pSelect.innerHTML = state.players.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+        gSelect.innerHTML = state.games.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
+      }
+
+      function showError(error) {
+        alert(error?.message || "Could not save changes.");
+        console.error(error);
+      }
+
+      async function refreshData() {
+        state = await store.loadState();
+        renderPlayers();
+        renderGames();
+        renderPlayerAndGameSelects();
       }
 
       function renderPlayers() {
         const host = document.getElementById("playersList");
         host.innerHTML = "";
-        state.players.forEach((player, index) => {
+        state.players.forEach((player) => {
           const row = document.createElement("div");
           row.className = "inline";
           row.innerHTML = `
-            <input value="${store.escapeHtml(player)}" aria-label="Player ${index + 1}" />
+            <input value="${store.escapeHtml(player.name)}" aria-label="Player ${store.escapeHtml(player.name)}" />
             <button type="button" class="secondary">Save</button>
             <button type="button" class="danger">Delete</button>
           `;
           const [input, saveBtn, deleteBtn] = row.children;
 
-          saveBtn.onclick = () => {
+          saveBtn.onclick = async () => {
             const next = store.normalizeName(input.value);
             if (!next) return;
-            const duplicate = state.players.some((p, i) => i !== index && p.toLowerCase() === next.toLowerCase());
+            const duplicate = state.players.some(
+              (p) => String(p.id) !== String(player.id) && p.name.toLowerCase() === next.toLowerCase()
+            );
             if (duplicate) return alert("Player name already exists.");
-            state.players[index] = next;
-            store.saveState(state);
-            renderPlayers();
-            renderPlayerAndGameSelects();
+            try {
+              await store.updatePlayer(player.id, next);
+              await refreshData();
+            } catch (error) {
+              showError(error);
+            }
           };
 
-          deleteBtn.onclick = () => {
+          deleteBtn.onclick = async () => {
             if (!confirm("Delete this player?")) return;
-            state.players.splice(index, 1);
-            store.saveState(state);
-            renderPlayers();
-            renderPlayerAndGameSelects();
+            try {
+              await store.deletePlayer(player.id);
+              await refreshData();
+            } catch (error) {
+              showError(error);
+            }
           };
 
           host.appendChild(row);
@@ -143,7 +162,7 @@
       function renderGames() {
         const host = document.getElementById("gamesList");
         host.innerHTML = "";
-        state.games.forEach((game, index) => {
+        state.games.forEach((game) => {
           const row = document.createElement("div");
           row.className = "grid card";
           const logoUrl = store.getLogoUrl(game);
@@ -183,7 +202,7 @@
             preview.src = isImageUrl(url) ? url : fallbackLogo;
           });
 
-          saveBtn.onclick = () => {
+          saveBtn.onclick = async () => {
             const name = store.normalizeName(nameInput.value);
             const min = Number(minInput.value);
             const max = Number(maxInput.value);
@@ -191,30 +210,43 @@
             if (!name || Number.isNaN(min) || Number.isNaN(max) || min > max) {
               return alert("Provide valid game name and min/max.");
             }
-            const duplicate = state.games.some((g, i) => i !== index && g.name.toLowerCase() === name.toLowerCase());
+            const duplicate = state.games.some(
+              (g) => String(g.id) !== String(game.id) && g.name.toLowerCase() === name.toLowerCase()
+            );
             if (duplicate) return alert("Game name already exists.");
-            state.games[index] = { name, direction: directionInput.value, min, max, logoUrl: logoUrlValue };
-            store.saveState(state);
-            renderGames();
-            renderPlayerAndGameSelects();
+            try {
+              await store.updateGame(game.id, {
+                name,
+                direction: directionInput.value,
+                min,
+                max,
+                logoUrl: logoUrlValue,
+              });
+              await refreshData();
+            } catch (error) {
+              showError(error);
+            }
           };
 
-          deleteBtn.onclick = () => {
+          deleteBtn.onclick = async () => {
             if (!confirm("Delete this game?")) return;
-            state.games.splice(index, 1);
-            store.saveState(state);
-            renderGames();
-            renderPlayerAndGameSelects();
+            try {
+              await store.deleteGame(game.id);
+              await refreshData();
+            } catch (error) {
+              showError(error);
+            }
           };
 
           host.appendChild(row);
         });
       }
 
-      document.getElementById("unlockForm").addEventListener("submit", (e) => {
+      document.getElementById("unlockForm").addEventListener("submit", async (e) => {
         e.preventDefault();
+        const stateNow = await store.loadState();
         const code = document.getElementById("adminCodeInput").value;
-        if (code !== state.adminCode) {
+        if (code !== stateNow.adminCode) {
           lockStatus.textContent = "Incorrect code.";
           lockStatus.className = "status warn";
           return;
@@ -226,29 +258,27 @@
       function showAdmin() {
         lockSection.style.display = "none";
         adminPanel.style.display = "grid";
-        renderPlayers();
-        renderGames();
-        renderPlayerAndGameSelects();
+        refreshData();
       }
 
       if (isUnlocked()) showAdmin();
 
-      document.getElementById("addPlayerForm").addEventListener("submit", (e) => {
+      document.getElementById("addPlayerForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const input = document.getElementById("newPlayerInput");
         const name = store.normalizeName(input.value);
         if (!name) return;
-        if (state.players.some((p) => p.toLowerCase() === name.toLowerCase())) {
-          return alert("Player name already exists.");
+
+        try {
+          await store.addPlayer(name);
+          input.value = "";
+          await refreshData();
+        } catch (error) {
+          showError(error);
         }
-        state.players.push(name);
-        store.saveState(state);
-        input.value = "";
-        renderPlayers();
-        renderPlayerAndGameSelects();
       });
 
-      document.getElementById("addGameForm").addEventListener("submit", (e) => {
+      document.getElementById("addGameForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const name = store.normalizeName(document.getElementById("gameNameInput").value);
         const direction = document.getElementById("directionInput").value;
@@ -259,38 +289,47 @@
         if (!name || Number.isNaN(min) || Number.isNaN(max) || min > max) {
           return alert("Provide valid game name and min/max.");
         }
-        if (state.games.some((g) => g.name.toLowerCase() === name.toLowerCase())) {
-          return alert("Game name already exists.");
+
+        try {
+          await store.addGame({ name, direction, min, max, logoUrl });
+          e.target.reset();
+          await refreshData();
+        } catch (error) {
+          showError(error);
         }
-
-        state.games.push({ name, direction, min, max, logoUrl });
-        store.saveState(state);
-        e.target.reset();
-        renderGames();
-        renderPlayerAndGameSelects();
       });
 
-      document.getElementById("adminScoreForm").addEventListener("submit", (e) => {
+      document.getElementById("adminScoreForm").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const player = document.getElementById("adminPlayerSelect").value;
-        const gameName = document.getElementById("adminGameSelect").value;
+        const playerId = document.getElementById("adminPlayerSelect").value;
+        const gameId = document.getElementById("adminGameSelect").value;
         const score = Number(document.getElementById("adminScoreInput").value);
-        const status = document.getElementById("adminScoreStatus");
-        if (!player || !gameName || Number.isNaN(score)) return;
+        if (!playerId || !gameId || Number.isNaN(score)) return;
 
-        state.submissions.push({
-          player,
-          game: gameName,
-          score,
-          enteredBy: "admin",
-          createdAt: new Date().toISOString(),
-        });
-        store.saveState(state);
-        status.textContent = "Admin score submitted.";
-        status.className = "status ok";
-        e.target.reset();
-        renderPlayerAndGameSelects();
+        try {
+          await store.submitScore({ playerId, gameId, score, submittedByAdmin: true });
+          adminScoreStatus.textContent = "Admin score submitted.";
+          adminScoreStatus.className = "status ok";
+          e.target.reset();
+          await refreshData();
+        } catch (error) {
+          adminScoreStatus.textContent = "Could not submit score.";
+          adminScoreStatus.className = "status warn";
+          console.error(error);
+        }
       });
+
+      (async () => {
+        await store.initializeStore();
+        const connection = store.getConnectionStatus();
+        if (!connection.available) {
+          lockStatus.textContent = connection.message;
+          lockStatus.className = "status warn";
+          document.querySelectorAll("input, select, button").forEach((el) => {
+            if (el.id !== "adminCodeInput") el.disabled = true;
+          });
+        }
+      })();
     </script>
   </body>
 </html>

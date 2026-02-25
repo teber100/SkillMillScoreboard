@@ -50,19 +50,20 @@
     <script src="app.js"></script>
     <script>
       const store = window.TournamentStore;
-      const state = store.loadState();
+      let state = null;
 
-      function renderStandings() {
+      async function renderStandings() {
         const body = document.getElementById("overallBody");
         body.innerHTML = "";
-        store.getOverallStandings(store.loadState()).forEach((row, idx) => {
+        const refreshed = await store.loadState();
+        store.getOverallStandings(refreshed).forEach((row, idx) => {
           const tr = document.createElement("tr");
           tr.innerHTML = `<td>${idx + 1}</td><td>${row.player}</td><td>${row.points}</td>`;
           body.appendChild(tr);
         });
       }
 
-      function renderRevealState() {
+      async function renderRevealState() {
         const on = state.overallRevealed === true;
         document.getElementById("revealHint").textContent = on
           ? "Overall results are currently revealed."
@@ -71,29 +72,33 @@
         btn.textContent = on ? "Hide Overall Results" : "Reveal Overall Results";
         btn.className = on ? "danger" : "secondary";
         document.getElementById("resultsSection").style.display = on ? "block" : "none";
-        if (on) renderStandings();
+        if (on) await renderStandings();
       }
 
-      document.getElementById("unlockForm").addEventListener("submit", (e) => {
+      document.getElementById("unlockForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const code = document.getElementById("adminCodeInput").value;
-        const lockStatus = document.getElementById("lockStatus");
         if (code !== state.adminCode) {
+          const lockStatus = document.getElementById("lockStatus");
           lockStatus.textContent = "Incorrect code.";
           lockStatus.className = "status warn";
           return;
         }
-        lockStatus.textContent = "";
         document.getElementById("lockSection").style.display = "none";
         document.getElementById("revealSection").style.display = "block";
-        renderRevealState();
+        await renderRevealState();
       });
 
-      document.getElementById("revealBtn").addEventListener("click", () => {
+      document.getElementById("revealBtn").addEventListener("click", async () => {
         state.overallRevealed = !state.overallRevealed;
-        store.saveState(state);
-        renderRevealState();
+        await store.saveState(state);
+        await renderRevealState();
       });
+
+      (async () => {
+        await store.initializeStore();
+        state = await store.loadState();
+      })();
     </script>
   </body>
 </html>

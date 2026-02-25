@@ -1,6 +1,6 @@
-# SkillMill Arcade Tournament (Simple Website)
+# SkillMill Arcade Tournament
 
-This is a very simple, mobile-friendly website for running a local arcade tournament with ~20–30 friends.
+A simple static website for running an arcade tournament with shared data across devices using Supabase.
 
 ## What this site does
 
@@ -12,6 +12,7 @@ This is a very simple, mobile-friendly website for running a local arcade tourna
 - No individual logins.
 - Admin page protected by one shared admin code.
 - Per-game leaderboard and overall standings with points.
+- TV display page for per-game top 3.
 
 ## How scoring works
 
@@ -31,92 +32,96 @@ This is a very simple, mobile-friendly website for running a local arcade tourna
 
 Default admin code is: **2468**
 
-To change it, open `app.js` and edit:
+To change it, open `app.js` and edit `DEFAULT_ADMIN_CODE`.
 
-- `DEFAULT_ADMIN_CODE = "2468"`
+---
 
-Then redeploy.
+## Supabase + Vercel setup (non-coder guide)
 
-## Pages and what they are for
+### 1) Create a Supabase project
 
-- `/index.html` (Home)
-  - Main menu page linked from your QR code.
-- `/submit.html` (Player score entry)
-  - Players submit scores.
-  - If score is outside expected min/max for a game, site shows warning and asks:
-    - **Fix it**
-    - **Submit anyway**
-- `/leaderboards.html` (Public standings)
-  - Overall standings (total points).
-  - Per-game rankings, best score, points.
-- `/admin.html` (Admin tools)
-  - Enter shared admin code to unlock.
-  - Add/edit/delete players.
-  - Add/edit/delete games (name, higher/lower, min/max).
-  - Submit scores on behalf of players.
+1. Go to <https://supabase.com> and create a new project.
+2. Wait for it to finish provisioning.
 
-## Click-by-click: Publish on Vercel with GitHub (non-coder guide)
+### 2) Create tables in Supabase
 
-### Part A — Put this project in GitHub
+1. In Supabase, open **SQL Editor**.
+2. Open the repo file `supabase-schema.sql`.
+3. Copy/paste the SQL into Supabase SQL Editor.
+4. Run it once.
 
-1. Create a GitHub account (if you don’t have one): <https://github.com>
-2. Click **New repository**.
-3. Name it something like `arcade-tournament`.
-4. Set it to Public or Private (your choice).
-5. Click **Create repository**.
-6. Upload these files into that repo.
-   - Easiest way: click **Add file** → **Upload files**, drag all project files, commit.
+This creates the required tables: `players`, `games`, and `scores` (plus optional `best_scores` view).
 
-### Part B — Deploy on Vercel
+### 3) Get your Supabase project keys
 
-1. Go to <https://vercel.com> and log in (or create account).
-2. Click **Add New...** → **Project**.
-3. Connect your GitHub account (if prompted).
-4. Select your repository.
-5. Vercel detects this as a static site automatically.
-6. Click **Deploy**.
-7. Wait for build/deploy to finish.
-8. Click **Visit** to open your live website.
+In Supabase project settings, copy:
 
-### Part C — Make the single QR code
+- **Project URL** (for `SUPABASE_URL`)
+- **anon/public key** (for `SUPABASE_ANON_KEY`)
 
-1. Copy your Vercel live URL (for example, `https://your-site.vercel.app`).
-2. Use any QR generator website.
-3. Create one QR code pointing to your main URL (`/index.html` or root URL).
-4. Print and place it in your arcade space.
+> Only use the anon/public key in this app. Do **not** use service role keys client-side.
 
-## Tournament setup checklist (recommended)
+### 4) Add environment variables in Vercel
 
-1. Open `/admin.html`.
-2. Enter admin code.
-3. Add all player names first.
-4. Verify/edit the 17 games.
-5. Set game directions correctly:
-   - Most games: Higher is better.
-   - Golden Tee: Lower is better.
-6. Set realistic min/max ranges per game.
-7. Optionally submit a test score.
-8. Open `/leaderboards.html` to verify it looks right.
-9. Start tournament.
+1. In Vercel, open your project.
+2. Go to **Settings → Environment Variables**.
+3. Add:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+4. Save.
 
-## During tournament operations
+(Also supported: `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`.)
 
-- Players use only `/submit.html`.
-- Admin uses `/admin.html` to:
-  - fix typos in names
-  - tune game ranges
-  - enter scores for players without phones
-- Anyone can view `/leaderboards.html`.
+### 5) Redeploy
 
-## Notes
+1. Trigger a new deployment in Vercel (or push a new commit).
+2. Open the live site after deploy completes.
 
-- Data is stored in each browser’s local storage.
-- If you want one shared database across all phones, you’ll need a backend (not included in this simple version).
+### 6) Verify shared data across devices
 
+1. On device A, add a player/game or submit score.
+2. On device B, open the same page and refresh.
+3. Confirm the same players/games/scores appear.
+
+---
+
+## Pages
+
+- `/index.html` — Home/menu.
+- `/submit.html` — player score entry.
+- `/leaderboards.html` — per-game + overall standings.
+- `/tv.html` — TV-friendly top-3 per game.
+- `/admin.html` — manage players/games and admin score entry.
+- `/results.html` — admin reveal/hide control for overall standings.
+
+---
+
+## Troubleshooting
+
+### “Tournament database not configured” or local mode banner
+
+- If Supabase env vars are missing, the app shows a warning and runs in **local mode**.
+- Local mode stores data only on that one device/browser (for temporary testing).
+- To fix shared data: add Vercel env vars and redeploy.
+
+### How to confirm app is using Supabase (not local mode)
+
+- You should **not** see the local mode warning banner.
+- Add a player or score on one device and verify it appears on another device.
+- In browser DevTools Network tab, you should see requests to `/api/config` and Supabase endpoints.
+
+### Database unreachable errors
+
+- If Supabase is unreachable or keys are invalid, pages show a friendly “contact admin” message.
+- Check Vercel logs:
+  - Vercel project → **Deployments** → select latest deployment → **Functions** logs (for `/api/config`)
+  - Also check browser console for client-side connection errors.
+
+---
 
 ## TV display and game logos
 
-- Open `/admin.html`, unlock admin, then add or edit games to set a **Logo URL (optional)**.
-- Each game row shows a small preview of the current logo; if no URL is set (or the URL fails), the app uses a built-in placeholder image.
-- Open `/tv.html` for the TV mode view. It shows **Top 3 per game only** (no overall standings) and auto-refreshes every 20 seconds.
-- For a full-screen display, open `/tv.html` on the TV device and use browser full-screen mode (usually `F11` or presentation mode).
+- Use `/admin.html` to set each game’s logo URL.
+- If no logo URL exists, TV view shows a placeholder.
+- `/tv.html` auto-refreshes every 20 seconds.
+- For events, open `/tv.html` on TV and use browser full-screen mode.
