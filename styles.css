@@ -183,54 +183,62 @@ td {
 }
 
 .tv-container {
-  padding: clamp(1rem, 2vw, 2rem);
+  padding: clamp(0.5rem, 1.2vw, 1rem);
   display: grid;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .tv-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: baseline;
+  gap: 0.4rem 0.8rem;
+  align-items: center;
   justify-content: space-between;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #2a3b5f;
+  border-radius: 10px;
+  background: #101d35;
 }
 
-.tv-header h1 {
+.tv-title {
   margin: 0;
-  font-size: clamp(1.2rem, 2vw, 2rem);
+  font-size: clamp(0.8rem, 1.1vw, 1rem);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #d6e6ff;
 }
 
 .tv-updated {
   margin: 0;
   color: #bfd0ef;
+  font-size: clamp(0.72rem, 0.95vw, 0.9rem);
   font-weight: 600;
 }
 
 .tv-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 0.9rem;
+  gap: 0.55rem;
 }
 
 .tv-card {
   background: #121f37;
   border: 1px solid #2a3b5f;
-  border-radius: 14px;
-  padding: 0.85rem;
+  border-radius: 12px;
+  padding: 0.55rem;
   display: grid;
-  gap: 0.65rem;
+  align-content: start;
+  gap: 0.35rem;
 }
 
 .tv-card h2 {
-  margin: 0;
-  font-size: 1.1rem;
+  display: none;
 }
 
 .tv-logo-wrap {
   width: 100%;
-  height: 96px;
-  border-radius: 12px;
+  height: 76px;
+  border-radius: 10px;
   background: #0b1730;
   border: 1px solid #2d416c;
   display: flex;
@@ -248,7 +256,7 @@ td {
 .tv-logo-placeholder {
   width: 100%;
   height: 100%;
-  font-size: 2rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #8fb0f0;
 }
@@ -256,7 +264,10 @@ td {
 .tv-direction {
   margin: 0;
   color: #bfd0ef;
-  font-size: 0.9rem;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .tv-scores {
@@ -264,18 +275,20 @@ td {
   padding-left: 0;
   list-style: none;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.25rem;
 }
 
 .tv-scores li {
   display: grid;
-  grid-template-columns: 52px 1fr auto;
-  gap: 0.5rem;
+  grid-template-columns: 42px 1fr auto;
+  gap: 0.35rem;
   align-items: center;
+  min-height: 2rem;
   background: #0e1a33;
   border: 1px solid #23365c;
-  border-radius: 10px;
-  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  padding: 0.22rem 0.35rem;
+  font-size: clamp(0.83rem, 0.95vw, 0.98rem);
 }
 
 .tv-scores .rank {
@@ -331,4 +344,15 @@ td {
   border: 1px solid var(--border);
   background: #f2f6ff;
   flex: 0 0 auto;
+}
+
+
+.top-nav-tv {
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.top-nav-tv a {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
 }
