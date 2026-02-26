@@ -28,6 +28,18 @@ A simple static website for running an arcade tournament with shared data across
    - Next rank is skipped.
 5. Overall standings = total points across all games.
 
+## How to deactivate a game if it breaks
+
+1. Go to `/admin.html` and unlock admin tools.
+2. In **Manage Games**, click **Set Inactive** for the broken machine.
+3. If repaired, click **Set Active** to bring it back.
+
+What happens when a game is inactive:
+- It is hidden from the score submission dropdown.
+- Any attempted submission to that game is blocked with: **“This game is currently inactive.”**
+- It is excluded from per-game points, overall standings, and TV display cards.
+- Existing score records remain in the database and are reused automatically if reactivated.
+
 ## Admin code (important)
 
 Default admin code is: **2468**

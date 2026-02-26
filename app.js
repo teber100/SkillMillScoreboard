@@ -315,7 +315,7 @@ async function loadState() {
         isActive: row.is_active,
       })
     )
-    .filter((game) => game.name && game.isActive !== false);
+    .filter((game) => game.name);
 
   const submissions = (scoresResp.data || [])
     .map((row) => ({
@@ -458,6 +458,7 @@ async function updateGame(id, gameInput) {
       min_score: game.min,
       max_score: game.max,
       logo_url: game.logoUrl || null,
+      is_active: game.isActive !== false,
     })
     .eq("id", id);
   if (error) throw error;
@@ -487,6 +488,7 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
     const player = state.players.find((row) => row.id === playerId);
     const game = state.games.find((row) => row.id === gameId);
     if (!player || !game) throw new Error("Player or game not found.");
+    if (!game.isActive) throw new Error("This game is currently inactive.");
 
     state.submissions.push({
       id: `local-score-${crypto.randomUUID()}`,
@@ -502,6 +504,14 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
     return;
   }
 
+  const { data: game, error: gameError } = await supabaseClient
+    .from("games")
+    .select("is_active")
+    .eq("id", gameId)
+    .single();
+  if (gameError) throw gameError;
+  if (game?.is_active === false) throw new Error("This game is currently inactive.");
+
   const { error } = await supabaseClient.from("scores").insert({
     player_id: playerId,
     game_id: gameId,
@@ -511,10 +521,14 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
   if (error) throw error;
 }
 
+function getActiveGames(state) {
+  return (state?.games || []).filter((game) => game.isActive !== false);
+}
+
 function getBestScoresByGame(state) {
   const result = {};
 
-  for (const game of state.games) {
+  for (const game of getActiveGames(state)) {
     const filtered = state.submissions.filter((submission) => submission.gameId === game.id);
     const bestByPlayer = new Map();
 
@@ -564,7 +578,7 @@ function getOverallStandings(state) {
   }
 
   const bestByGame = getBestScoresByGame(state);
-  for (const game of state.games) {
+  for (const game of getActiveGames(state)) {
     const scored = calculateGamePoints(bestByGame[game.id] || []);
     for (const row of scored) {
       if (!totals.has(row.playerId)) continue;
@@ -591,7 +605,7 @@ async function renderTVPage() {
 
     const bestByGame = getBestScoresByGame(state);
 
-    state.games.forEach((game) => {
+    getActiveGames(state).forEach((game) => {
       const logoUrl = getLogoUrl(game);
       const top3 = (bestByGame[game.id] || []).slice(0, 3);
       const scoresHtml = top3.length
@@ -654,6 +668,7 @@ window.TournamentStore = {
   normalizeName,
   getLogoUrl,
   getGameInitials,
+  getActiveGames,
   getBestScoresByGame,
   calculateGamePoints,
   getOverallStandings,

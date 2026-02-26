@@ -56,7 +56,7 @@
         const gameBoards = document.getElementById("gameBoards");
         gameBoards.innerHTML = "";
 
-        state.games.forEach((game) => {
+        store.getActiveGames(state).forEach((game) => {
           const wrapped = document.createElement("div");
           wrapped.className = "card";
           const rows = store.calculateGamePoints(bestByGame[game.id] || []);
