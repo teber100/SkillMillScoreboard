@@ -40,6 +40,29 @@ What happens when a game is inactive:
 - It is excluded from per-game points, overall standings, and TV display cards.
 - Existing score records remain in the database and are reused automatically if reactivated.
 
+
+## Undo and admin score deletion
+
+### Player submit confirmation + 30-second Undo
+
+- After each successful submission on `/submit.html`, players see a confirmation panel showing:
+  - player name
+  - game name
+  - submitted score value
+  - submission timestamp
+- The panel includes an **Undo (30s)** button.
+- If Undo is clicked within 30 seconds, that exact inserted `scores` row is deleted by its `id` and the form is reset.
+- After 30 seconds, Undo expires and the panel shows **Undo expired.**
+
+### Admin score management (delete only)
+
+- On `/admin.html` (after entering admin code), the **Score Management** section allows:
+  - selecting a player from a dropdown
+  - viewing their latest 25 submissions (timestamp, game, score)
+  - deleting any listed submission by score `id`
+- There is **no admin score edit** action, only delete.
+- Deletions apply immediately because leaderboards and TV data are always computed from current DB records.
+
 ## Admin code (important)
 
 Default admin code is: **2468**
