@@ -100,6 +100,36 @@ button.danger {
   min-width: 110px;
 }
 
+
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 500;
+  margin-bottom: 0;
+}
+
+.checkbox-row input {
+  width: auto;
+  margin: 0;
+}
+
+.link-button {
+  width: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: 0.4rem;
+  color: var(--brand);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.link-button:hover {
+  color: #1f56b8;
+}
+
 .subtle {
   color: var(--subtle);
 }

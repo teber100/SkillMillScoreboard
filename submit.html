@@ -22,6 +22,9 @@
           <div>
             <label for="playerSelect">Player</label>
             <select id="playerSelect" required></select>
+            <button id="clearRememberedPlayerBtn" class="link-button small" type="button">
+              Clear remembered player
+            </button>
           </div>
           <div>
             <label for="gameSelect">Game</label>
@@ -31,6 +34,10 @@
             <label for="scoreInput">Score</label>
             <input id="scoreInput" type="number" step="any" required />
           </div>
+          <label class="checkbox-row">
+            <input id="rememberPlayerInput" type="checkbox" checked />
+            Remember me on this device
+          </label>
           <button type="submit">Submit Score</button>
         </form>
         <p id="status" class="status"></p>
@@ -56,6 +63,9 @@
       const form = document.getElementById("scoreForm");
       const scoreInput = document.getElementById("scoreInput");
       const status = document.getElementById("status");
+      const rememberPlayerInput = document.getElementById("rememberPlayerInput");
+      const clearRememberedPlayerBtn = document.getElementById("clearRememberedPlayerBtn");
+      const LAST_PLAYER_STORAGE_KEY = "last_player_id";
       let state = null;
 
       function fillSelect(select, values) {
@@ -86,6 +96,19 @@
           state.games.map((g) => ({ value: String(g.id), label: g.name }))
         );
 
+        const rememberedPlayerId = localStorage.getItem(LAST_PLAYER_STORAGE_KEY);
+        if (rememberedPlayerId) {
+          const rememberedPlayerExists = state.players.some(
+            (player) => String(player.id) === String(rememberedPlayerId)
+          );
+
+          if (rememberedPlayerExists) {
+            playerSelect.value = rememberedPlayerId;
+          } else {
+            localStorage.removeItem(LAST_PLAYER_STORAGE_KEY);
+          }
+        }
+
         if (!state.players.length || !state.games.length) {
           status.textContent = "Admin must add players and games before scoring can begin.";
           status.className = "status warn";
@@ -114,10 +137,28 @@
         }
 
         await store.submitScore({ playerId, gameId, score, submittedByAdmin: false });
+        const shouldRememberPlayer = rememberPlayerInput.checked;
+        if (shouldRememberPlayer) {
+          localStorage.setItem(LAST_PLAYER_STORAGE_KEY, String(playerId));
+        } else {
+          localStorage.removeItem(LAST_PLAYER_STORAGE_KEY);
+        }
+
         status.textContent = "Score submitted successfully.";
         status.className = "status ok";
+        const selectedPlayerId = playerSelect.value;
         form.reset();
+        if (shouldRememberPlayer && selectedPlayerId) {
+          playerSelect.value = selectedPlayerId;
+        }
       }
+
+      clearRememberedPlayerBtn.addEventListener("click", () => {
+        localStorage.removeItem(LAST_PLAYER_STORAGE_KEY);
+        playerSelect.selectedIndex = 0;
+        status.textContent = "Remembered player cleared.";
+        status.className = "status";
+      });
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
