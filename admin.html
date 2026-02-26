@@ -170,7 +170,7 @@
       function renderGames() {
         const host = document.getElementById("gamesList");
         host.innerHTML = "";
-        state.games.forEach((game) => {
+        store.getGamesSortedByName(state).forEach((game) => {
           const row = document.createElement("div");
           row.className = "grid card";
           const logoUrl = store.getLogoUrl(game);
