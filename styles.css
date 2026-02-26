@@ -386,3 +386,27 @@ td {
   font-size: 0.75rem;
   padding: 0.2rem 0.55rem;
 }
+
+.game-status-row {
+  align-items: center;
+}
+
+.game-status-badge {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.game-status-badge.active {
+  background: #e8f8ee;
+  color: #1f7a2f;
+  border: 1px solid #b9e5c4;
+}
+
+.game-status-badge.inactive {
+  background: #eef2f7;
+  color: #5a6a80;
+  border: 1px solid #d2dbe7;
+}

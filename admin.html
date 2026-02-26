@@ -102,7 +102,15 @@
         const pSelect = document.getElementById("adminPlayerSelect");
         const gSelect = document.getElementById("adminGameSelect");
         pSelect.innerHTML = state.players.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
-        gSelect.innerHTML = state.games.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
+        const activeGames = store.getActiveGames(state);
+        gSelect.innerHTML = activeGames.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
+        if (!activeGames.length) {
+          adminScoreStatus.textContent = "No active games available for admin score entry.";
+          adminScoreStatus.className = "status warn";
+        } else if (adminScoreStatus.textContent === "No active games available for admin score entry.") {
+          adminScoreStatus.textContent = "";
+          adminScoreStatus.className = "status";
+        }
       }
 
       function showError(error) {
@@ -184,6 +192,14 @@
             isImageUrl(logoUrl) ? store.escapeHtml(logoUrl) : fallbackLogo
           }" onerror="this.src='${fallbackLogo}'" />
             </div>
+            <div class="inline game-status-row">
+              <span class="game-status-badge ${game.isActive !== false ? "active" : "inactive"}">${
+            game.isActive !== false ? "Active" : "Inactive"
+          }</span>
+              <button type="button" class="toggle-active secondary">${
+                game.isActive !== false ? "Set Inactive" : "Set Active"
+              }</button>
+            </div>
             <div class="inline">
               <button type="button" class="secondary">Save</button>
               <button type="button" class="danger">Delete</button>
@@ -195,12 +211,30 @@
           const [minInput, maxInput] = row.querySelectorAll('input[type="number"]');
           const logoInput = row.querySelector(".logo-url-input");
           const preview = row.querySelector(".game-logo-preview");
-          const [saveBtn, deleteBtn] = row.querySelectorAll("button");
+          const toggleActiveBtn = row.querySelector(".toggle-active");
+          const saveBtn = row.querySelector("button.secondary:not(.toggle-active)");
+          const deleteBtn = row.querySelector("button.danger");
 
           logoInput.addEventListener("input", () => {
             const url = store.getLogoUrl({ logoUrl: logoInput.value });
             preview.src = isImageUrl(url) ? url : fallbackLogo;
           });
+
+          toggleActiveBtn.onclick = async () => {
+            try {
+              await store.updateGame(game.id, {
+                name: game.name,
+                direction: game.direction,
+                min: game.min,
+                max: game.max,
+                logoUrl: store.getLogoUrl(game),
+                isActive: game.isActive === false,
+              });
+              await refreshData();
+            } catch (error) {
+              showError(error);
+            }
+          };
 
           saveBtn.onclick = async () => {
             const name = store.normalizeName(nameInput.value);
@@ -221,6 +255,7 @@
                 min,
                 max,
                 logoUrl: logoUrlValue,
+                isActive: game.isActive !== false,
               });
               await refreshData();
             } catch (error) {
