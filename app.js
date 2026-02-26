@@ -492,7 +492,7 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
     if (!player || !game) throw new Error("Player or game not found.");
     if (!game.isActive) throw new Error("This game is currently inactive.");
 
-    state.submissions.push({
+    const submission = {
       id: `local-score-${crypto.randomUUID()}`,
       playerId,
       playerName: player.name,
@@ -501,9 +501,10 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
       score: numericScore,
       enteredBy: submittedByAdmin ? "admin" : "player",
       createdAt: new Date().toISOString(),
-    });
+    };
+    state.submissions.push(submission);
     await saveState(state);
-    return;
+    return submission;
   }
 
   const { data: game, error: gameError } = await supabaseClient
@@ -514,12 +515,41 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
   if (gameError) throw gameError;
   if (game?.is_active === false) throw new Error("This game is currently inactive.");
 
-  const { error } = await supabaseClient.from("scores").insert({
-    player_id: playerId,
-    game_id: gameId,
-    score_value: numericScore,
-    submitted_by_admin: submittedByAdmin === true,
-  });
+  const { data, error } = await supabaseClient
+    .from("scores")
+    .insert({
+      player_id: playerId,
+      game_id: gameId,
+      score_value: numericScore,
+      submitted_by_admin: submittedByAdmin === true,
+    })
+    .select("id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
+    .single();
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    playerId: data.player?.id,
+    playerName: normalizeName(data.player?.name),
+    gameId: data.game?.id,
+    gameName: normalizeName(data.game?.name),
+    score: Number(data.score_value),
+    enteredBy: data.submitted_by_admin ? "admin" : "player",
+    createdAt: data.created_at,
+  };
+}
+
+async function deleteSubmission(id) {
+  if (!id) throw new Error("Submission id is required.");
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState();
+    state.submissions = state.submissions.filter((entry) => String(entry.id) !== String(id));
+    await saveState(state);
+    return;
+  }
+
+  const { error } = await supabaseClient.from("scores").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -691,4 +721,5 @@ window.TournamentStore = {
   updateGame,
   deleteGame,
   submitScore,
+  deleteSubmission,
 };

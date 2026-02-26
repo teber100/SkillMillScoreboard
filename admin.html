@@ -57,6 +57,20 @@
           <div id="gamesList" class="grid"></div>
         </section>
 
+
+        <section class="card">
+          <h2>Score Management</h2>
+          <p class="small subtle">Delete incorrect submissions by score id (no score editing).</p>
+          <div class="grid">
+            <div>
+              <label for="scorePlayerSelect">Player</label>
+              <select id="scorePlayerSelect"></select>
+            </div>
+            <div id="scoreManagementList" class="grid"></div>
+            <p id="scoreManagementStatus" class="status"></p>
+          </div>
+        </section>
+
         <section class="card">
           <h2>Admin Score Entry</h2>
           <p class="small subtle">Use this for players without smartphones.</p>
@@ -84,6 +98,9 @@
       const adminPanel = document.getElementById("adminPanel");
       const lockStatus = document.getElementById("lockStatus");
       const adminScoreStatus = document.getElementById("adminScoreStatus");
+      const scorePlayerSelect = document.getElementById("scorePlayerSelect");
+      const scoreManagementList = document.getElementById("scoreManagementList");
+      const scoreManagementStatus = document.getElementById("scoreManagementStatus");
       let state = null;
 
       function isUnlocked() {
@@ -113,6 +130,70 @@
         }
       }
 
+
+      function getRecentSubmissionsForPlayer(playerId) {
+        return state.submissions
+          .filter((entry) => String(entry.playerId) === String(playerId))
+          .slice()
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          .slice(0, 25);
+      }
+
+      function renderScoreManagement() {
+        const previousSelection = scorePlayerSelect.value;
+        scorePlayerSelect.innerHTML = state.players
+          .map((player) => `<option value="${player.id}">${store.escapeHtml(player.name)}</option>`)
+          .join("");
+
+        scoreManagementList.innerHTML = "";
+        const selectedPlayerId = previousSelection || state.players[0]?.id;
+        if (selectedPlayerId) {
+          scorePlayerSelect.value = selectedPlayerId;
+        }
+
+        if (!selectedPlayerId) {
+          scoreManagementStatus.textContent = "Add players to manage score submissions.";
+          scoreManagementStatus.className = "status warn";
+          return;
+        }
+
+        const submissions = getRecentSubmissionsForPlayer(selectedPlayerId);
+        if (!submissions.length) {
+          scoreManagementStatus.textContent = "No submissions found for this player.";
+          scoreManagementStatus.className = "status";
+          return;
+        }
+
+        scoreManagementStatus.textContent = `Showing latest ${submissions.length} submissions.`;
+        scoreManagementStatus.className = "status";
+
+        submissions.forEach((entry) => {
+          const row = document.createElement("div");
+          row.className = "inline score-management-row";
+          row.innerHTML = `
+            <span>${new Date(entry.createdAt).toLocaleString()}</span>
+            <span>${store.escapeHtml(entry.gameName)}</span>
+            <span>${Number(entry.score).toLocaleString()}</span>
+            <button type="button" class="danger">Delete</button>
+          `;
+          const deleteBtn = row.querySelector("button");
+          deleteBtn.onclick = async () => {
+            if (!confirm("Delete this submission?")) return;
+            try {
+              await store.deleteSubmission(entry.id);
+              await refreshData();
+              scoreManagementStatus.textContent = "Submission deleted.";
+              scoreManagementStatus.className = "status ok";
+            } catch (error) {
+              scoreManagementStatus.textContent = "Could not delete submission.";
+              scoreManagementStatus.className = "status warn";
+              console.error(error);
+            }
+          };
+          scoreManagementList.appendChild(row);
+        });
+      }
+
       function showError(error) {
         alert(error?.message || "Could not save changes.");
         console.error(error);
@@ -123,6 +204,7 @@
         renderPlayers();
         renderGames();
         renderPlayerAndGameSelects();
+        renderScoreManagement();
       }
 
       function renderPlayers() {
@@ -276,6 +358,10 @@
           host.appendChild(row);
         });
       }
+
+      scorePlayerSelect.addEventListener("change", () => {
+        renderScoreManagement();
+      });
 
       document.getElementById("unlockForm").addEventListener("submit", async (e) => {
         e.preventDefault();

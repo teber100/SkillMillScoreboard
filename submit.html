@@ -41,6 +41,20 @@
           <button type="submit">Submit Score</button>
         </form>
         <p id="status" class="status"></p>
+
+        <section id="confirmationPanel" class="card confirmation-panel" style="display: none">
+          <h2>Submission Confirmed</h2>
+          <dl class="confirmation-grid">
+            <div><dt>Player</dt><dd id="confirmPlayer"></dd></div>
+            <div><dt>Game</dt><dd id="confirmGame"></dd></div>
+            <div><dt>Score</dt><dd id="confirmScore"></dd></div>
+            <div><dt>Submitted</dt><dd id="confirmTime"></dd></div>
+          </dl>
+          <div class="inline">
+            <button id="undoBtn" type="button" class="secondary">Undo (30s)</button>
+            <p id="undoStatus" class="status"></p>
+          </div>
+        </section>
       </section>
     </main>
 
@@ -66,7 +80,18 @@
       const rememberPlayerInput = document.getElementById("rememberPlayerInput");
       const clearRememberedPlayerBtn = document.getElementById("clearRememberedPlayerBtn");
       const LAST_PLAYER_STORAGE_KEY = "last_player_id";
+      const UNDO_WINDOW_MS = 30000;
       let state = null;
+      let pendingSubmission = null;
+      let undoTimeoutId = null;
+
+      const confirmationPanel = document.getElementById("confirmationPanel");
+      const confirmPlayer = document.getElementById("confirmPlayer");
+      const confirmGame = document.getElementById("confirmGame");
+      const confirmScore = document.getElementById("confirmScore");
+      const confirmTime = document.getElementById("confirmTime");
+      const undoBtn = document.getElementById("undoBtn");
+      const undoStatus = document.getElementById("undoStatus");
 
       function fillSelect(select, values) {
         select.innerHTML = "";
@@ -116,6 +141,46 @@
         }
       }
 
+
+      function clearUndoTimer() {
+        if (undoTimeoutId) {
+          clearTimeout(undoTimeoutId);
+          undoTimeoutId = null;
+        }
+      }
+
+      function resetScoreForm() {
+        const shouldRememberPlayer = rememberPlayerInput.checked;
+        const selectedPlayerId = playerSelect.value;
+        form.reset();
+        if (shouldRememberPlayer && selectedPlayerId) {
+          playerSelect.value = selectedPlayerId;
+        }
+      }
+
+      function showConfirmation(submission) {
+        pendingSubmission = submission;
+        confirmPlayer.textContent = submission.playerName;
+        confirmGame.textContent = submission.gameName;
+        confirmScore.textContent = Number(submission.score).toLocaleString();
+        confirmTime.textContent = new Date(submission.createdAt).toLocaleString();
+        undoBtn.disabled = false;
+        undoBtn.style.display = "inline-block";
+        undoBtn.textContent = "Undo (30s)";
+        undoStatus.textContent = "";
+        undoStatus.className = "status";
+        confirmationPanel.style.display = "block";
+
+        clearUndoTimer();
+        undoTimeoutId = setTimeout(() => {
+          pendingSubmission = null;
+          undoBtn.disabled = true;
+          undoBtn.style.display = "none";
+          undoStatus.textContent = "Undo expired.";
+          undoStatus.className = "status warn";
+        }, UNDO_WINDOW_MS);
+      }
+
       async function saveSubmission(force = false) {
         const playerId = playerSelect.value;
         const gameId = gameSelect.value;
@@ -142,7 +207,7 @@
           return;
         }
 
-        await store.submitScore({ playerId, gameId, score, submittedByAdmin: false });
+        const submission = await store.submitScore({ playerId, gameId, score, submittedByAdmin: false });
         const shouldRememberPlayer = rememberPlayerInput.checked;
         if (shouldRememberPlayer) {
           localStorage.setItem(LAST_PLAYER_STORAGE_KEY, String(playerId));
@@ -152,11 +217,7 @@
 
         status.textContent = "Score submitted successfully.";
         status.className = "status ok";
-        const selectedPlayerId = playerSelect.value;
-        form.reset();
-        if (shouldRememberPlayer && selectedPlayerId) {
-          playerSelect.value = selectedPlayerId;
-        }
+        showConfirmation(submission);
       }
 
       clearRememberedPlayerBtn.addEventListener("click", () => {
@@ -164,6 +225,28 @@
         playerSelect.selectedIndex = 0;
         status.textContent = "Remembered player cleared.";
         status.className = "status";
+      });
+
+      undoBtn.addEventListener("click", async () => {
+        if (!pendingSubmission?.id) return;
+        undoBtn.disabled = true;
+        try {
+          await store.deleteSubmission(pendingSubmission.id);
+          clearUndoTimer();
+          pendingSubmission = null;
+          undoBtn.style.display = "none";
+          undoStatus.textContent = "Submission removed.";
+          undoStatus.className = "status ok";
+          status.textContent = "Submission removed.";
+          status.className = "status ok";
+          resetScoreForm();
+          await refreshState();
+        } catch (error) {
+          undoBtn.disabled = false;
+          undoStatus.textContent = "Could not undo submission.";
+          undoStatus.className = "status warn";
+          console.error(error);
+        }
       });
 
       form.addEventListener("submit", async (e) => {

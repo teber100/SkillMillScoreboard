@@ -410,3 +410,35 @@ td {
   color: #5a6a80;
   border: 1px solid #d2dbe7;
 }
+
+.confirmation-panel {
+  margin-top: 1rem;
+}
+
+.confirmation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+}
+
+.confirmation-grid dt {
+  font-size: 0.85rem;
+  color: var(--subtle);
+}
+
+.confirmation-grid dd {
+  margin: 0.2rem 0 0;
+  font-weight: 700;
+}
+
+.score-management-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem;
+}
+
+.score-management-row span {
+  min-width: 130px;
+}
