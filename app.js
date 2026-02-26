@@ -45,6 +45,8 @@ function normalizeName(name) {
   return String(name || "").trim();
 }
 
+const gameNameCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -522,7 +524,14 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
 }
 
 function getActiveGames(state) {
-  return (state?.games || []).filter((game) => game.isActive !== false);
+  return getGamesSortedByName(state, { activeOnly: true });
+}
+
+function getGamesSortedByName(state, { activeOnly = false } = {}) {
+  return (state?.games || [])
+    .filter((game) => (activeOnly ? game.isActive !== false : true))
+    .slice()
+    .sort((a, b) => gameNameCollator.compare(normalizeName(a?.name), normalizeName(b?.name)));
 }
 
 function getBestScoresByGame(state) {
@@ -669,6 +678,7 @@ window.TournamentStore = {
   getLogoUrl,
   getGameInitials,
   getActiveGames,
+  getGamesSortedByName,
   getBestScoresByGame,
   calculateGamePoints,
   getOverallStandings,
