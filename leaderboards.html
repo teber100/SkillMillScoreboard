@@ -16,6 +16,7 @@
       </nav>
       <section class="card">
         <h1>Overall Standings</h1>
+        <p id="participantsNote" class="small subtle"></p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -46,12 +47,18 @@
         if (!currentTournament) {
           document.getElementById("overallBody").innerHTML =
             '<tr><td colspan="3">No active tournament is configured. Ask an admin to create/select one.</td></tr>';
+          const participantsNote = document.getElementById("participantsNote");
+          if (participantsNote) participantsNote.textContent = "";
           document.getElementById("gameBoards").innerHTML = "";
           return;
         }
 
         const overall = store.getOverallStandings(state);
         const overallBody = document.getElementById("overallBody");
+        const participantsNote = document.getElementById("participantsNote");
+        if (participantsNote) {
+          participantsNote.textContent = `Showing ${overall.length} participant${overall.length === 1 ? "" : "s"}`;
+        }
         overallBody.innerHTML = "";
         overall.forEach((row, idx) => {
           const tr = document.createElement("tr");

@@ -893,8 +893,18 @@ function calculateGamePoints(rankedScores) {
 }
 
 function getOverallStandings(state) {
+  const currentTournament = getCurrentTournamentFromState(state);
+  const participatingPlayerIds = new Set(
+    (state.submissions || [])
+      .filter((submission) =>
+        currentTournament ? String(submission.tournamentId) === String(currentTournament.id) : false
+      )
+      .map((submission) => submission.playerId)
+  );
+
   const totals = new Map();
-  for (const player of state.players) {
+  for (const player of state.players || []) {
+    if (!participatingPlayerIds.has(player.id)) continue;
     totals.set(player.id, { player: player.name, points: 0 });
   }
 
