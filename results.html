@@ -98,6 +98,12 @@
       (async () => {
         await store.initializeStore();
         state = await store.loadState();
+        const currentTournament = store.getCurrentTournamentFromState(state);
+        if (!currentTournament) {
+          const lockStatus = document.getElementById("lockStatus");
+          lockStatus.textContent = "No active tournament is configured. Use Admin to create/select one.";
+          lockStatus.className = "status warn";
+        }
       })();
     </script>
   </body>

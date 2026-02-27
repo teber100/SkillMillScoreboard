@@ -28,6 +28,28 @@
 
       <section id="adminPanel" class="grid" style="display: none">
         <section class="card">
+          <h2>Current Tournament</h2>
+          <p class="small subtle">Exactly one tournament is active at a time. All scores, TV cards, and leaderboards use the active tournament.</p>
+          <p id="currentTournamentStatus" class="status"></p>
+          <div class="grid">
+            <label for="currentTournamentSelect">Active tournament</label>
+            <div class="inline">
+              <select id="currentTournamentSelect"></select>
+              <button id="setActiveTournamentBtn" type="button" class="secondary">Set Active</button>
+            </div>
+          </div>
+          <hr />
+          <form id="createTournamentForm" class="grid">
+            <input id="newTournamentNameInput" placeholder="Tournament name (e.g. Skill Mill 2027)" required />
+            <input id="newTournamentDateInput" type="date" />
+            <label for="cloneTournamentSelect">Clone games from (optional)</label>
+            <select id="cloneTournamentSelect"></select>
+            <button type="submit">Create Tournament</button>
+          </form>
+          <p id="tournamentActionStatus" class="status"></p>
+        </section>
+
+        <section class="card">
           <h2>Manage Players</h2>
           <p class="small subtle">Players can only select names from this list during score entry.</p>
           <form id="addPlayerForm" class="inline">
@@ -101,6 +123,10 @@
       const scorePlayerSelect = document.getElementById("scorePlayerSelect");
       const scoreManagementList = document.getElementById("scoreManagementList");
       const scoreManagementStatus = document.getElementById("scoreManagementStatus");
+      const currentTournamentStatus = document.getElementById("currentTournamentStatus");
+      const tournamentActionStatus = document.getElementById("tournamentActionStatus");
+      const currentTournamentSelect = document.getElementById("currentTournamentSelect");
+      const cloneTournamentSelect = document.getElementById("cloneTournamentSelect");
       let state = null;
 
       function isUnlocked() {
@@ -113,6 +139,30 @@
 
       function isImageUrl(url) {
         return /^(https?:\/\/|data:image\/)/i.test(url);
+      }
+
+
+      function renderTournamentControls() {
+        const tournaments = state.tournaments || [];
+        currentTournamentSelect.innerHTML = tournaments
+          .map((t) => `<option value="${t.id}">${store.escapeHtml(t.name)}${t.status === "active" ? " (active)" : ""}</option>`)
+          .join("");
+
+        cloneTournamentSelect.innerHTML =
+          `<option value="">-- Do not clone --</option>` +
+          tournaments.map((t) => `<option value="${t.id}">${store.escapeHtml(t.name)}</option>`).join("");
+
+        const currentTournament = store.getCurrentTournamentFromState(state);
+        if (!currentTournament) {
+          currentTournamentStatus.textContent =
+            "No active tournament selected. Create a tournament and click Set Active.";
+          currentTournamentStatus.className = "status warn";
+          return;
+        }
+
+        currentTournamentSelect.value = currentTournament.id;
+        currentTournamentStatus.textContent = `Current active tournament: ${currentTournament.name}`;
+        currentTournamentStatus.className = "status ok";
       }
 
       function renderPlayerAndGameSelects() {
@@ -132,8 +182,12 @@
 
 
       function getRecentSubmissionsForPlayer(playerId) {
+        const currentTournament = store.getCurrentTournamentFromState(state);
         return state.submissions
           .filter((entry) => String(entry.playerId) === String(playerId))
+          .filter((entry) =>
+            currentTournament ? String(entry.tournamentId) === String(currentTournament.id) : false
+          )
           .slice()
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 25);
@@ -201,6 +255,7 @@
 
       async function refreshData() {
         state = await store.loadState();
+        renderTournamentControls();
         renderPlayers();
         renderGames();
         renderPlayerAndGameSelects();
@@ -361,6 +416,42 @@
 
       scorePlayerSelect.addEventListener("change", () => {
         renderScoreManagement();
+      });
+
+
+      document.getElementById("setActiveTournamentBtn").addEventListener("click", async () => {
+        const tournamentId = currentTournamentSelect.value;
+        if (!tournamentId) return;
+        try {
+          await store.setActiveTournament(tournamentId);
+          tournamentActionStatus.textContent = "Active tournament updated.";
+          tournamentActionStatus.className = "status ok";
+          await refreshData();
+        } catch (error) {
+          tournamentActionStatus.textContent = error?.message || "Could not set active tournament.";
+          tournamentActionStatus.className = "status warn";
+          console.error(error);
+        }
+      });
+
+      document.getElementById("createTournamentForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = store.normalizeName(document.getElementById("newTournamentNameInput").value);
+        const startDate = document.getElementById("newTournamentDateInput").value || null;
+        const cloneFromTournamentId = cloneTournamentSelect.value || null;
+        if (!name) return;
+
+        try {
+          await store.createTournament({ name, startDate, cloneFromTournamentId });
+          tournamentActionStatus.textContent = "Tournament created. Set it active when ready.";
+          tournamentActionStatus.className = "status ok";
+          e.target.reset();
+          await refreshData();
+        } catch (error) {
+          tournamentActionStatus.textContent = error?.message || "Could not create tournament.";
+          tournamentActionStatus.className = "status warn";
+          console.error(error);
+        }
       });
 
       document.getElementById("unlockForm").addEventListener("submit", async (e) => {

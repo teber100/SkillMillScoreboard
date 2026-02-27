@@ -42,6 +42,13 @@
 
       async function renderPage() {
         const state = await store.loadState();
+        const currentTournament = store.getCurrentTournamentFromState(state);
+        if (!currentTournament) {
+          document.getElementById("overallBody").innerHTML =
+            '<tr><td colspan="3">No active tournament is configured. Ask an admin to create/select one.</td></tr>';
+          document.getElementById("gameBoards").innerHTML = "";
+          return;
+        }
 
         const overall = store.getOverallStandings(state);
         const overallBody = document.getElementById("overallBody");

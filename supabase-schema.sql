@@ -1,10 +1,7 @@
 -- Arcade Tournament Schema (Supabase / Postgres)
 -- Safe to run once on a new project
 
--- Optional: keep everything in public schema (default)
--- create schema if not exists public;
-
--- 1) Players
+-- 1) Players (global across tournaments)
 create table if not exists public.players (
   id bigint generated always as identity primary key,
   name text not null,
@@ -14,9 +11,22 @@ create table if not exists public.players (
   constraint players_name_unique unique (name)
 );
 
--- 2) Games
+-- 2) Tournaments (one active at a time)
+create table if not exists public.tournaments (
+  id bigint generated always as identity primary key,
+  name text not null unique,
+  start_date date null,
+  status text not null default 'draft',
+  created_at timestamptz not null default now(),
+
+  constraint tournaments_name_not_blank check (length(trim(name)) > 0),
+  constraint tournaments_status_valid check (status in ('active', 'archived', 'draft'))
+);
+
+-- 3) Games (scoped to tournament)
 create table if not exists public.games (
   id bigint generated always as identity primary key,
+  tournament_id bigint not null references public.tournaments(id) on delete cascade,
   name text not null,
   scoring_direction text not null default 'higher',
   min_score numeric null,
@@ -28,7 +38,7 @@ create table if not exists public.games (
   updated_at timestamptz not null default now(),
 
   constraint games_name_not_blank check (length(trim(name)) > 0),
-  constraint games_name_unique unique (name),
+  constraint games_name_per_tournament_unique unique (tournament_id, name),
   constraint games_scoring_direction_valid check (scoring_direction in ('higher', 'lower')),
   constraint games_score_range_valid check (
     min_score is null
@@ -37,32 +47,31 @@ create table if not exists public.games (
   )
 );
 
--- 3) Scores (raw submissions)
+-- 4) Scores (raw submissions, scoped to tournament)
 create table if not exists public.scores (
   id bigint generated always as identity primary key,
+  tournament_id bigint not null references public.tournaments(id) on delete cascade,
   player_id bigint not null references public.players(id) on delete cascade,
   game_id bigint not null references public.games(id) on delete cascade,
   score_value numeric not null,
   submitted_by_admin boolean not null default false,
   created_at timestamptz not null default now()
-
-  -- Note: we intentionally do NOT add a uniqueness constraint on (player_id, game_id)
-  -- because your app allows multiple submissions and only the best score counts.
 );
 
--- Helpful indexes for leaderboard / top-3 / "best score per player per game" queries
-create index if not exists idx_scores_game_id on public.scores (game_id);
-create index if not exists idx_scores_player_id on public.scores (player_id);
-create index if not exists idx_scores_game_player_created on public.scores (game_id, player_id, created_at desc);
-create index if not exists idx_scores_player_game_created on public.scores (player_id, game_id, created_at desc);
+-- Helpful indexes
+create index if not exists idx_tournaments_status on public.tournaments (status);
+create index if not exists idx_games_tournament_active_sort on public.games (tournament_id, is_active, sort_order);
+create index if not exists idx_games_tournament_name on public.games (tournament_id, name);
+create index if not exists idx_scores_tournament_game_player_created on public.scores (tournament_id, game_id, player_id, created_at desc);
+create index if not exists idx_scores_tournament_player_game_created on public.scores (tournament_id, player_id, game_id, created_at desc);
+create index if not exists idx_scores_tournament_game_score on public.scores (tournament_id, game_id, score_value);
 
-create index if not exists idx_games_sort_order on public.games (sort_order);
-create index if not exists idx_games_is_active_sort on public.games (is_active, sort_order);
+-- Ensure only one active tournament (partial unique index)
+create unique index if not exists idx_tournaments_single_active
+  on public.tournaments ((status))
+  where status = 'active';
 
--- Optional index that can help raw score sorting
-create index if not exists idx_scores_game_score on public.scores (game_id, score_value);
-
--- 4) Auto-update updated_at on games
+-- 5) Auto-update updated_at on games
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -80,33 +89,41 @@ before update on public.games
 for each row
 execute function public.set_updated_at();
 
--- 5) (Optional but recommended) Seed your 15 games
--- Adjust ranges/logo URLs later from your Admin page.
-insert into public.games (name, scoring_direction, min_score, max_score, sort_order)
-values
-  ('Joust', 'higher', 0, 2000000, 1),
-  ('Rastan', 'higher', 0, 2000000, 2),
-  ('Badlands', 'higher', 0, 200000, 3),
-  ('US Championship Vball', 'higher', 0, 30, 4),
-  ('Aliens', 'higher', 0, 2000000, 5),
-  ('Dynamite Duke', 'higher', 0, 2000000, 6),
-  ('Lethal Enforcers', 'higher', 0, 2000000, 7),
-  ('Capcom Bowling', 'higher', 0, 300, 8),
-  ('Rush n'' Attack', 'higher', 0, 500000, 9),
-  ('Galaga', 'higher', 0, 5000000, 10),
-  ('Operation: Wolf', 'higher', 0, 2000000, 11),
-  ('Centipede', 'higher', 0, 1000000, 12),
-  ('Dig Dug', 'higher', 0, 500000, 13),
-  ('Arkanoid', 'higher', 0, 1000000, 14),
-  ('Golden Tee 97''', 'lower', -20, 40, 15)
-  ('NBA Hangtime', 'higher', 0, 40, 16),
-  ('NFL Blitz', 'higher', 0, 40, 17)
+-- 6) Seed a default active tournament and games
+insert into public.tournaments (name, status)
+values ('Skill Mill 2026', 'active')
 on conflict (name) do nothing;
 
--- 6) (Optional) Create a simple view for "best score per player per game"
--- This can make app queries easier, but your app can also compute this itself.
+insert into public.games (tournament_id, name, scoring_direction, min_score, max_score, sort_order)
+select t.id, seed.name, seed.scoring_direction, seed.min_score, seed.max_score, seed.sort_order
+from public.tournaments t
+cross join (
+  values
+    ('Joust', 'higher', 0::numeric, 2000000::numeric, 1),
+    ('Rastan', 'higher', 0::numeric, 2000000::numeric, 2),
+    ('Badlands', 'higher', 0::numeric, 200000::numeric, 3),
+    ('US Championship Vball', 'higher', 0::numeric, 30::numeric, 4),
+    ('Aliens', 'higher', 0::numeric, 2000000::numeric, 5),
+    ('Dynamite Duke', 'higher', 0::numeric, 2000000::numeric, 6),
+    ('Lethal Enforcers', 'higher', 0::numeric, 2000000::numeric, 7),
+    ('Capcom Bowling', 'higher', 0::numeric, 300::numeric, 8),
+    ('Rush n'' Attack', 'higher', 0::numeric, 500000::numeric, 9),
+    ('Galaga', 'higher', 0::numeric, 5000000::numeric, 10),
+    ('Operation: Wolf', 'higher', 0::numeric, 2000000::numeric, 11),
+    ('Centipede', 'higher', 0::numeric, 1000000::numeric, 12),
+    ('Dig Dug', 'higher', 0::numeric, 500000::numeric, 13),
+    ('Arkanoid', 'higher', 0::numeric, 1000000::numeric, 14),
+    ('Golden Tee 97''', 'lower', -20::numeric, 40::numeric, 15),
+    ('NBA Hangtime', 'higher', 0::numeric, 40::numeric, 16),
+    ('NFL Blitz', 'higher', 0::numeric, 40::numeric, 17)
+) as seed(name, scoring_direction, min_score, max_score, sort_order)
+where t.name = 'Skill Mill 2026'
+on conflict (tournament_id, name) do nothing;
+
+-- 7) Optional view for best score per player per game within each tournament
 create or replace view public.best_scores as
 select
+  s.tournament_id,
   s.game_id,
   s.player_id,
   g.scoring_direction,
@@ -117,4 +134,4 @@ select
   max(s.created_at) as last_submission_at
 from public.scores s
 join public.games g on g.id = s.game_id
-group by s.game_id, s.player_id, g.scoring_direction;
+group by s.tournament_id, s.game_id, s.player_id, g.scoring_direction;
