@@ -5,6 +5,8 @@ A simple static website for running an arcade tournament with shared data across
 ## What this site does
 
 - One shared URL/QR code for everyone.
+- Multiple tournaments (years) with exactly one active tournament at a time.
+- Games and scores are isolated per tournament, while players remain global.
 - Players submit scores by selecting:
   - player name (from dropdown)
   - game (from dropdown)
@@ -85,7 +87,9 @@ To change it, open `app.js` and edit `DEFAULT_ADMIN_CODE`.
 3. Copy/paste the SQL into Supabase SQL Editor.
 4. Run it once.
 
-This creates the required tables: `players`, `games`, and `scores` (plus optional `best_scores` view).
+For a brand new project, this creates `players`, `tournaments`, `games`, and `scores` (plus optional `best_scores` view).
+
+For an existing project already in production, run `supabase-migration-tournaments.sql` first to backfill all existing games/scores into the default tournament.
 
 ### 3) Get your Supabase project keys
 
@@ -160,3 +164,21 @@ In Supabase project settings, copy:
 - If no logo URL exists, TV view shows a placeholder.
 - `/tv.html` auto-refreshes every 20 seconds.
 - For events, open `/tv.html` on TV and use browser full-screen mode.
+
+
+## Running next year's tournament (non-coder checklist)
+
+1. In Supabase SQL Editor, run `supabase-migration-tournaments.sql` (existing deployments) or `supabase-schema.sql` (new deployments).
+2. Verify `tournaments` contains the default row (`Skill Mill 2026`) and that existing `games`/`scores` now have `tournament_id` values.
+3. Open `/admin.html` and unlock admin tools.
+4. In **Current Tournament**:
+   - Enter new name (example: `Skill Mill 2027`), optional date.
+   - Choose **Clone games from** previous tournament (optional but recommended).
+   - Click **Create Tournament**.
+5. Select the new tournament and click **Set Active**.
+6. Edit this year’s games (ranges, logos, active/inactive) in **Manage Games**.
+
+How current tournament is determined:
+- The app reads `tournaments` and selects the single row where `status = 'active'`.
+- Submit/TV/leaderboards/results/admin game management all scope queries to that active tournament.
+- Players remain global and are shared across all tournaments.

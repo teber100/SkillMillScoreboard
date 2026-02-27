@@ -112,6 +112,15 @@
 
       async function refreshState() {
         state = await store.loadState();
+        const currentTournament = store.getCurrentTournamentFromState(state);
+        if (!currentTournament) {
+          status.textContent =
+            "No active tournament is configured. Ask an admin to create one in Admin and set it active.";
+          status.className = "status warn";
+          fillSelect(playerSelect, []);
+          fillSelect(gameSelect, []);
+          return;
+        }
         fillSelect(
           playerSelect,
           state.players.map((p) => ({ value: String(p.id), label: p.name }))

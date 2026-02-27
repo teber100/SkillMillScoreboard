@@ -24,8 +24,16 @@ const defaultGames = [
 ];
 
 const defaultState = {
+  tournaments: [{ id: "local-tournament-1", name: "Default Tournament", status: "active", startDate: null }],
+  currentTournamentId: "local-tournament-1",
   players: ["Alex", "Jamie", "Riley"].map((name, idx) => ({ id: `local-player-${idx + 1}`, name })),
-  games: defaultGames.map((game, idx) => ({ id: `local-game-${idx + 1}`, ...game, sortOrder: idx + 1, isActive: true })),
+  games: defaultGames.map((game, idx) => ({
+    id: `local-game-${idx + 1}`,
+    tournamentId: "local-tournament-1",
+    ...game,
+    sortOrder: idx + 1,
+    isActive: true,
+  })),
   submissions: [],
   adminCode: DEFAULT_ADMIN_CODE,
   overallRevealed: false,
@@ -76,6 +84,7 @@ function normalizeGame(game) {
   const source = game || {};
   return {
     id: source.id,
+    tournamentId: source.tournamentId,
     name: normalizeName(source.name),
     direction: source.direction === "lower" ? "lower" : "higher",
     min: Number.isFinite(Number(source.min)) ? Number(source.min) : 0,
@@ -111,37 +120,66 @@ function readLegacyLocalState() {
 
   try {
     const parsed = JSON.parse(raw);
+    const fallbackTournament = { id: "local-tournament-1", name: "Default Tournament", status: "active", startDate: null };
+    const tournaments = Array.isArray(parsed.tournaments) && parsed.tournaments.length
+      ? parsed.tournaments.map((t, idx) => ({
+          id: t.id || `local-tournament-${idx + 1}`,
+          name: normalizeName(t.name),
+          status: t.status === "active" ? "active" : "archived",
+          startDate: t.startDate || null,
+        })).filter((t) => t.name)
+      : [fallbackTournament];
+
+    const activeTournament = tournaments.find((t) => t.status === "active") || tournaments[0] || fallbackTournament;
+
+    const players = Array.isArray(parsed.players)
+      ? parsed.players.map((name, idx) => ({ id: `local-player-${idx + 1}`, name: normalizeName(name) })).filter((p) => p.name)
+      : [];
+
+    const games = Array.isArray(parsed.games)
+      ? parsed.games
+          .map((game, idx) =>
+            normalizeGame({
+              ...game,
+              id: game.id || `local-game-${idx + 1}`,
+              tournamentId: game.tournamentId || activeTournament.id,
+              sortOrder: Number.isFinite(Number(game.sortOrder)) ? Number(game.sortOrder) : idx + 1,
+              isActive: game.isActive !== false,
+            })
+          )
+          .filter((game) => game.name)
+      : [];
+
+    const submissions = Array.isArray(parsed.submissions)
+      ? parsed.submissions
+          .map((entry, idx) => {
+            const playerName = normalizeName(entry.player || entry.playerName);
+            const gameName = normalizeName(entry.game || entry.gameName);
+            const player = players.find((p) => normalizeName(p.name) === playerName);
+            const game = games.find((g) => normalizeName(g.name) === gameName);
+            return {
+              id: entry.id || `local-score-${idx + 1}`,
+              playerId: entry.playerId || player?.id,
+              playerName,
+              gameId: entry.gameId || game?.id,
+              gameName,
+              tournamentId: entry.tournamentId || game?.tournamentId || activeTournament.id,
+              score: Number(entry.score),
+              enteredBy: entry.enteredBy || "player",
+              createdAt: entry.createdAt || new Date().toISOString(),
+            };
+          })
+          .filter((entry) => Number.isFinite(entry.score) && entry.playerName && entry.gameName)
+      : [];
+
     return {
       adminCode: parsed.adminCode || DEFAULT_ADMIN_CODE,
       overallRevealed: parsed.overallRevealed === true,
-      players: Array.isArray(parsed.players)
-        ? parsed.players.map((name, idx) => ({ id: `local-player-${idx + 1}`, name: normalizeName(name) })).filter((p) => p.name)
-        : [],
-      games: Array.isArray(parsed.games)
-        ? parsed.games
-            .map((game, idx) => normalizeGame({ ...game, id: `local-game-${idx + 1}`, sortOrder: idx + 1, isActive: true }))
-            .filter((game) => game.name)
-        : [],
-      submissions: Array.isArray(parsed.submissions)
-        ? parsed.submissions
-            .map((entry, idx) => {
-              const playerName = normalizeName(entry.player);
-              const gameName = normalizeName(entry.game);
-              const player = parsed.players?.find((p) => normalizeName(p) === playerName);
-              const game = parsed.games?.find((g) => normalizeName(g?.name) === gameName);
-              return {
-                id: `local-score-${idx + 1}`,
-                playerId: player ? `local-player-${parsed.players.indexOf(player) + 1}` : undefined,
-                playerName,
-                gameId: game ? `local-game-${parsed.games.indexOf(game) + 1}` : undefined,
-                gameName,
-                score: Number(entry.score),
-                enteredBy: entry.enteredBy || "player",
-                createdAt: entry.createdAt || new Date().toISOString(),
-              };
-            })
-            .filter((entry) => Number.isFinite(entry.score) && entry.playerName && entry.gameName)
-        : [],
+      tournaments,
+      currentTournamentId: parsed.currentTournamentId || activeTournament.id,
+      players,
+      games,
+      submissions,
     };
   } catch {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultState));
@@ -153,15 +191,28 @@ function writeLegacyLocalState(state) {
   const compact = {
     adminCode: state.adminCode,
     overallRevealed: state.overallRevealed,
+    tournaments: (state.tournaments || []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      status: t.status,
+      startDate: t.startDate || null,
+    })),
+    currentTournamentId: state.currentTournamentId,
     players: state.players.map((player) => player.name),
     games: state.games.map((game) => ({
+      id: game.id,
+      tournamentId: game.tournamentId,
       name: game.name,
       direction: game.direction,
       min: game.min,
       max: game.max,
       logoUrl: game.logoUrl,
+      sortOrder: game.sortOrder,
+      isActive: game.isActive !== false,
     })),
     submissions: state.submissions.map((entry) => ({
+      id: entry.id,
+      tournamentId: entry.tournamentId,
       player: entry.playerName,
       game: entry.gameName,
       score: entry.score,
@@ -265,6 +316,31 @@ async function initializeStore() {
   return initPromise;
 }
 
+function getCurrentTournamentFromState(state) {
+  const tournaments = state?.tournaments || [];
+  if (!tournaments.length) return null;
+  return (
+    tournaments.find((t) => String(t.id) === String(state.currentTournamentId)) ||
+    tournaments.find((t) => t.status === "active") ||
+    tournaments[0]
+  );
+}
+
+function ensureCurrentTournament(state) {
+  const tournament = getCurrentTournamentFromState(state);
+  if (!tournament) {
+    throw new Error(
+      "No tournament is configured. In Admin, create a tournament and set it as active before using scoring pages."
+    );
+  }
+  return tournament;
+}
+
+async function getCurrentTournament() {
+  const state = await loadState();
+  return ensureCurrentTournament(state);
+}
+
 async function loadState() {
   await initializeStore();
   const prefs = readLocalPrefs();
@@ -278,6 +354,8 @@ async function loadState() {
 
   if (connectionStatus.mode !== "supabase") {
     return {
+      tournaments: [],
+      currentTournamentId: null,
       players: [],
       games: [],
       submissions: [],
@@ -286,21 +364,55 @@ async function loadState() {
     };
   }
 
-  const [playersResp, gamesResp, scoresResp] = await Promise.all([
+  const [playersResp, tournamentsResp] = await Promise.all([
     supabaseClient.from("players").select("id,name").order("name", { ascending: true }),
+    supabaseClient.from("tournaments").select("id,name,start_date,status,created_at").order("created_at", { ascending: false }),
+  ]);
+
+  if (playersResp.error || tournamentsResp.error) {
+    throw playersResp.error || tournamentsResp.error;
+  }
+
+  const tournaments = (tournamentsResp.data || [])
+    .map((row) => ({
+      id: row.id,
+      name: normalizeName(row.name),
+      startDate: row.start_date || null,
+      status: row.status,
+      createdAt: row.created_at,
+    }))
+    .filter((t) => t.name);
+
+  const activeTournament = tournaments.find((t) => t.status === "active") || null;
+
+  if (!activeTournament) {
+    return {
+      tournaments,
+      currentTournamentId: null,
+      players: (playersResp.data || []).map((row) => ({ id: row.id, name: normalizeName(row.name) })).filter((p) => p.name),
+      games: [],
+      submissions: [],
+      adminCode: prefs.adminCode,
+      overallRevealed: prefs.overallRevealed,
+    };
+  }
+
+  const [gamesResp, scoresResp] = await Promise.all([
     supabaseClient
       .from("games")
-      .select("id,name,scoring_direction,min_score,max_score,logo_url,sort_order,is_active")
+      .select("id,tournament_id,name,scoring_direction,min_score,max_score,logo_url,sort_order,is_active")
+      .eq("tournament_id", activeTournament.id)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
     supabaseClient
       .from("scores")
-      .select("id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
+      .select("id,tournament_id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
+      .eq("tournament_id", activeTournament.id)
       .order("created_at", { ascending: true }),
   ]);
 
-  if (playersResp.error || gamesResp.error || scoresResp.error) {
-    throw playersResp.error || gamesResp.error || scoresResp.error;
+  if (gamesResp.error || scoresResp.error) {
+    throw gamesResp.error || scoresResp.error;
   }
 
   const players = (playersResp.data || []).map((row) => ({ id: row.id, name: normalizeName(row.name) })).filter((p) => p.name);
@@ -308,6 +420,7 @@ async function loadState() {
     .map((row) =>
       normalizeGame({
         id: row.id,
+        tournamentId: row.tournament_id,
         name: row.name,
         direction: row.scoring_direction,
         min: row.min_score ?? 0,
@@ -322,6 +435,7 @@ async function loadState() {
   const submissions = (scoresResp.data || [])
     .map((row) => ({
       id: row.id,
+      tournamentId: row.tournament_id,
       playerId: row.player?.id,
       playerName: normalizeName(row.player?.name),
       gameId: row.game?.id,
@@ -333,6 +447,8 @@ async function loadState() {
     .filter((entry) => entry.playerName && entry.gameName && Number.isFinite(entry.score));
 
   return {
+    tournaments,
+    currentTournamentId: activeTournament.id,
     players,
     games,
     submissions,
@@ -352,6 +468,107 @@ async function saveState(state) {
     localStateCache = structuredClone(state);
     writeLegacyLocalState(state);
   }
+}
+
+async function createTournament({ name, startDate, cloneFromTournamentId }) {
+  const normalized = normalizeName(name);
+  if (!normalized) throw new Error("Tournament name is required.");
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState();
+    if ((state.tournaments || []).some((t) => t.name.toLowerCase() === normalized.toLowerCase())) {
+      throw new Error("Tournament name already exists.");
+    }
+
+    const newTournament = {
+      id: `local-tournament-${crypto.randomUUID()}`,
+      name: normalized,
+      status: "archived",
+      startDate: startDate || null,
+    };
+    state.tournaments.push(newTournament);
+
+    if (cloneFromTournamentId) {
+      const sourceGames = state.games.filter((g) => String(g.tournamentId) === String(cloneFromTournamentId));
+      const nextSortBase = 0;
+      sourceGames.forEach((g, idx) => {
+        state.games.push({
+          ...g,
+          id: `local-game-${crypto.randomUUID()}`,
+          tournamentId: newTournament.id,
+          sortOrder: Number.isFinite(Number(g.sortOrder)) ? Number(g.sortOrder) : nextSortBase + idx + 1,
+        });
+      });
+    }
+
+    await saveState(state);
+    return newTournament;
+  }
+
+  const { data: created, error: createError } = await supabaseClient
+    .from("tournaments")
+    .insert({
+      name: normalized,
+      start_date: startDate || null,
+      status: "draft",
+    })
+    .select("id,name,start_date,status")
+    .single();
+  if (createError) throw createError;
+
+  if (cloneFromTournamentId) {
+    const { data: sourceGames, error: sourceError } = await supabaseClient
+      .from("games")
+      .select("name,scoring_direction,min_score,max_score,logo_url,sort_order,is_active")
+      .eq("tournament_id", cloneFromTournamentId)
+      .order("sort_order", { ascending: true });
+    if (sourceError) throw sourceError;
+
+    if (sourceGames?.length) {
+      const payload = sourceGames.map((game) => ({
+        tournament_id: created.id,
+        name: game.name,
+        scoring_direction: game.scoring_direction,
+        min_score: game.min_score,
+        max_score: game.max_score,
+        logo_url: game.logo_url,
+        sort_order: game.sort_order,
+        is_active: game.is_active,
+      }));
+      const { error: cloneError } = await supabaseClient.from("games").insert(payload);
+      if (cloneError) throw cloneError;
+    }
+  }
+
+  return {
+    id: created.id,
+    name: created.name,
+    startDate: created.start_date,
+    status: created.status,
+  };
+}
+
+async function setActiveTournament(tournamentId) {
+  if (!tournamentId) throw new Error("Tournament id is required.");
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState();
+    let found = false;
+    state.tournaments = (state.tournaments || []).map((t) => {
+      const isTarget = String(t.id) === String(tournamentId);
+      if (isTarget) found = true;
+      return { ...t, status: isTarget ? "active" : "archived" };
+    });
+    if (!found) throw new Error("Tournament not found.");
+    state.currentTournamentId = tournamentId;
+    await saveState(state);
+    return;
+  }
+
+  const { error: archiveError } = await supabaseClient.from("tournaments").update({ status: "archived" }).neq("id", tournamentId);
+  if (archiveError) throw archiveError;
+  const { error: activeError } = await supabaseClient.from("tournaments").update({ status: "active" }).eq("id", tournamentId);
+  if (activeError) throw activeError;
 }
 
 async function addPlayer(name) {
@@ -408,11 +625,16 @@ async function addGame(gameInput) {
     throw new Error("Provide valid game name and min/max.");
   }
 
+  const currentTournament = await getCurrentTournament();
+
   if (connectionStatus.mode === "local") {
     const state = await loadState();
-    const duplicate = state.games.some((row) => row.name.toLowerCase() === game.name.toLowerCase());
+    const duplicate = state.games.some(
+      (row) =>
+        String(row.tournamentId) === String(currentTournament.id) && row.name.toLowerCase() === game.name.toLowerCase()
+    );
     if (duplicate) throw new Error("Game name already exists.");
-    state.games.push({ ...game, id: `local-game-${crypto.randomUUID()}` });
+    state.games.push({ ...game, id: `local-game-${crypto.randomUUID()}`, tournamentId: currentTournament.id });
     await saveState(state);
     return;
   }
@@ -420,12 +642,14 @@ async function addGame(gameInput) {
   const { data: games, error: maxSortError } = await supabaseClient
     .from("games")
     .select("sort_order")
+    .eq("tournament_id", currentTournament.id)
     .order("sort_order", { ascending: false })
     .limit(1);
   if (maxSortError) throw maxSortError;
 
   const nextSort = Number(games?.[0]?.sort_order || 0) + 1;
   const { error } = await supabaseClient.from("games").insert({
+    tournament_id: currentTournament.id,
     name: game.name,
     scoring_direction: game.direction,
     min_score: game.min,
@@ -443,9 +667,13 @@ async function updateGame(id, gameInput) {
     throw new Error("Provide valid game name and min/max.");
   }
 
+  const currentTournament = await getCurrentTournament();
+
   if (connectionStatus.mode === "local") {
     const state = await loadState();
-    const row = state.games.find((entry) => entry.id === id);
+    const row = state.games.find(
+      (entry) => String(entry.id) === String(id) && String(entry.tournamentId) === String(currentTournament.id)
+    );
     if (!row) throw new Error("Game not found.");
     Object.assign(row, game);
     await saveState(state);
@@ -462,20 +690,31 @@ async function updateGame(id, gameInput) {
       logo_url: game.logoUrl || null,
       is_active: game.isActive !== false,
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("tournament_id", currentTournament.id);
   if (error) throw error;
 }
 
 async function deleteGame(id) {
+  const currentTournament = await getCurrentTournament();
+
   if (connectionStatus.mode === "local") {
     const state = await loadState();
-    state.games = state.games.filter((game) => game.id !== id);
-    state.submissions = state.submissions.filter((entry) => entry.gameId !== id);
+    state.games = state.games.filter(
+      (game) => !(String(game.id) === String(id) && String(game.tournamentId) === String(currentTournament.id))
+    );
+    state.submissions = state.submissions.filter(
+      (entry) => !(String(entry.gameId) === String(id) && String(entry.tournamentId) === String(currentTournament.id))
+    );
     await saveState(state);
     return;
   }
 
-  const { error } = await supabaseClient.from("games").delete().eq("id", id);
+  const { error } = await supabaseClient
+    .from("games")
+    .delete()
+    .eq("id", id)
+    .eq("tournament_id", currentTournament.id);
   if (error) throw error;
 }
 
@@ -485,10 +724,14 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
     throw new Error("Player, game, and score are required.");
   }
 
+  const currentTournament = await getCurrentTournament();
+
   if (connectionStatus.mode === "local") {
     const state = await loadState();
-    const player = state.players.find((row) => row.id === playerId);
-    const game = state.games.find((row) => row.id === gameId);
+    const player = state.players.find((row) => String(row.id) === String(playerId));
+    const game = state.games.find(
+      (row) => String(row.id) === String(gameId) && String(row.tournamentId) === String(currentTournament.id)
+    );
     if (!player || !game) throw new Error("Player or game not found.");
     if (!game.isActive) throw new Error("This game is currently inactive.");
 
@@ -498,6 +741,7 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
       playerName: player.name,
       gameId,
       gameName: game.name,
+      tournamentId: currentTournament.id,
       score: numericScore,
       enteredBy: submittedByAdmin ? "admin" : "player",
       createdAt: new Date().toISOString(),
@@ -511,6 +755,7 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
     .from("games")
     .select("is_active")
     .eq("id", gameId)
+    .eq("tournament_id", currentTournament.id)
     .single();
   if (gameError) throw gameError;
   if (game?.is_active === false) throw new Error("This game is currently inactive.");
@@ -518,17 +763,19 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
   const { data, error } = await supabaseClient
     .from("scores")
     .insert({
+      tournament_id: currentTournament.id,
       player_id: playerId,
       game_id: gameId,
       score_value: numericScore,
       submitted_by_admin: submittedByAdmin === true,
     })
-    .select("id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
+    .select("id,tournament_id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
     .single();
   if (error) throw error;
 
   return {
     id: data.id,
+    tournamentId: data.tournament_id,
     playerId: data.player?.id,
     playerName: normalizeName(data.player?.name),
     gameId: data.game?.id,
@@ -541,15 +788,22 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
 
 async function deleteSubmission(id) {
   if (!id) throw new Error("Submission id is required.");
+  const currentTournament = await getCurrentTournament();
 
   if (connectionStatus.mode === "local") {
     const state = await loadState();
-    state.submissions = state.submissions.filter((entry) => String(entry.id) !== String(id));
+    state.submissions = state.submissions.filter(
+      (entry) => !(String(entry.id) === String(id) && String(entry.tournamentId) === String(currentTournament.id))
+    );
     await saveState(state);
     return;
   }
 
-  const { error } = await supabaseClient.from("scores").delete().eq("id", id);
+  const { error } = await supabaseClient
+    .from("scores")
+    .delete()
+    .eq("id", id)
+    .eq("tournament_id", currentTournament.id);
   if (error) throw error;
 }
 
@@ -558,7 +812,11 @@ function getActiveGames(state) {
 }
 
 function getGamesSortedByName(state, { activeOnly = false } = {}) {
+  const currentTournament = getCurrentTournamentFromState(state);
   return (state?.games || [])
+    .filter((game) =>
+      currentTournament ? String(game.tournamentId) === String(currentTournament.id) : false
+    )
     .filter((game) => (activeOnly ? game.isActive !== false : true))
     .slice()
     .sort((a, b) => gameNameCollator.compare(normalizeName(a?.name), normalizeName(b?.name)));
@@ -568,7 +826,10 @@ function getBestScoresByGame(state) {
   const result = {};
 
   for (const game of getActiveGames(state)) {
-    const filtered = state.submissions.filter((submission) => submission.gameId === game.id);
+    const filtered = state.submissions.filter(
+      (submission) =>
+        String(submission.gameId) === String(game.id) && String(submission.tournamentId) === String(game.tournamentId)
+    );
     const bestByPlayer = new Map();
 
     for (const entry of filtered) {
@@ -636,6 +897,7 @@ async function renderTVPage() {
   try {
     const state = await loadState();
     host.innerHTML = "";
+    ensureCurrentTournament(state);
 
     if (!connectionStatus.available) {
       host.innerHTML = `<article class="tv-card"><h2>Unavailable</h2><p>${escapeHtml(connectionStatus.message)}</p></article>`;
@@ -707,6 +969,9 @@ window.TournamentStore = {
   normalizeName,
   getLogoUrl,
   getGameInitials,
+  getCurrentTournament,
+  getCurrentTournamentFromState,
+  ensureCurrentTournament,
   getActiveGames,
   getGamesSortedByName,
   getBestScoresByGame,
@@ -714,6 +979,8 @@ window.TournamentStore = {
   getOverallStandings,
   renderTVPage,
   escapeHtml,
+  createTournament,
+  setActiveTournament,
   addPlayer,
   updatePlayer,
   deletePlayer,
