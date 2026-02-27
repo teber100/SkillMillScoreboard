@@ -130,7 +130,8 @@ function readLegacyLocalState() {
         })).filter((t) => t.name)
       : [fallbackTournament];
 
-    const activeTournament = tournaments.find((t) => t.status === "active") || tournaments[0] || fallbackTournament;
+    const activeTournament = tournaments.find((t) => t.status === "active") || null;
+    const fallbackTournamentId = parsed.currentTournamentId || tournaments[0]?.id || fallbackTournament.id;
 
     const players = Array.isArray(parsed.players)
       ? parsed.players.map((name, idx) => ({ id: `local-player-${idx + 1}`, name: normalizeName(name) })).filter((p) => p.name)
@@ -142,7 +143,7 @@ function readLegacyLocalState() {
             normalizeGame({
               ...game,
               id: game.id || `local-game-${idx + 1}`,
-              tournamentId: game.tournamentId || activeTournament.id,
+              tournamentId: game.tournamentId || activeTournament?.id || fallbackTournamentId,
               sortOrder: Number.isFinite(Number(game.sortOrder)) ? Number(game.sortOrder) : idx + 1,
               isActive: game.isActive !== false,
             })
@@ -163,7 +164,7 @@ function readLegacyLocalState() {
               playerName,
               gameId: entry.gameId || game?.id,
               gameName,
-              tournamentId: entry.tournamentId || game?.tournamentId || activeTournament.id,
+              tournamentId: entry.tournamentId || game?.tournamentId || activeTournament?.id || fallbackTournamentId,
               score: Number(entry.score),
               enteredBy: entry.enteredBy || "player",
               createdAt: entry.createdAt || new Date().toISOString(),
@@ -176,7 +177,7 @@ function readLegacyLocalState() {
       adminCode: parsed.adminCode || DEFAULT_ADMIN_CODE,
       overallRevealed: parsed.overallRevealed === true,
       tournaments,
-      currentTournamentId: parsed.currentTournamentId || activeTournament.id,
+      currentTournamentId: parsed.currentTournamentId || activeTournament?.id || null,
       players,
       games,
       submissions,
@@ -322,7 +323,7 @@ function getCurrentTournamentFromState(state) {
   return (
     tournaments.find((t) => String(t.id) === String(state.currentTournamentId)) ||
     tournaments.find((t) => t.status === "active") ||
-    tournaments[0]
+    null
   );
 }
 
@@ -553,22 +554,42 @@ async function setActiveTournament(tournamentId) {
 
   if (connectionStatus.mode === "local") {
     const state = await loadState();
-    let found = false;
-    state.tournaments = (state.tournaments || []).map((t) => {
-      const isTarget = String(t.id) === String(tournamentId);
-      if (isTarget) found = true;
-      return { ...t, status: isTarget ? "active" : "archived" };
-    });
-    if (!found) throw new Error("Tournament not found.");
+    const targetExists = (state.tournaments || []).some((t) => String(t.id) === String(tournamentId));
+    if (!targetExists) throw new Error("Selected tournament no longer exists. Refresh and try again.");
+    state.tournaments = (state.tournaments || []).map((t) => ({
+      ...t,
+      status: String(t.id) === String(tournamentId) ? "active" : "archived",
+    }));
     state.currentTournamentId = tournamentId;
     await saveState(state);
     return;
   }
 
+  const { data: targetTournament, error: targetError } = await supabaseClient
+    .from("tournaments")
+    .select("id")
+    .eq("id", tournamentId)
+    .maybeSingle();
+  if (targetError) throw targetError;
+  if (!targetTournament) throw new Error("Selected tournament no longer exists. Refresh and try again.");
+
+  const { data: previouslyActive, error: previousError } = await supabaseClient
+    .from("tournaments")
+    .select("id")
+    .eq("status", "active");
+  if (previousError) throw previousError;
+
   const { error: archiveError } = await supabaseClient.from("tournaments").update({ status: "archived" }).neq("id", tournamentId);
   if (archiveError) throw archiveError;
+
   const { error: activeError } = await supabaseClient.from("tournaments").update({ status: "active" }).eq("id", tournamentId);
-  if (activeError) throw activeError;
+  if (!activeError) return;
+
+  const previousActiveId = previouslyActive?.find((t) => String(t.id) !== String(tournamentId))?.id;
+  if (previousActiveId) {
+    await supabaseClient.from("tournaments").update({ status: "active" }).eq("id", previousActiveId);
+  }
+  throw activeError;
 }
 
 async function addPlayer(name) {
