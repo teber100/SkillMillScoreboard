@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hall of Champions</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <nav class="top-nav" aria-label="Site navigation">
+        <a href="index.html">Home</a>
+        <a href="submit.html">Submit</a>
+        <a href="leaderboards.html">Leaderboards</a>
+        <a href="hall.html">Hall of Champions</a>
+        <a href="tv.html">TV Display</a>
+      </nav>
+
+      <section class="card">
+        <h1>Hall of Champions</h1>
+        <p class="subtle">Historical tournament winners and all-time game records.</p>
+      </section>
+
+      <section class="card">
+        <h2>Champions by Year</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tournament</th>
+                <th>Date</th>
+                <th>Champion (1st)</th>
+                <th>Runner-up (2nd)</th>
+                <th>3rd Place</th>
+              </tr>
+            </thead>
+            <tbody id="championsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>All-time Records by Game</h2>
+        <div id="recordsGrid" class="records-grid"></div>
+      </section>
+
+      <section class="card">
+        <h2>Fun Counters</h2>
+        <div class="hall-counters">
+          <article>
+            <h3>Most Championships (Top 5)</h3>
+            <ol id="championshipsList"></ol>
+          </article>
+          <article>
+            <h3>Most Podiums (Top 5)</h3>
+            <ol id="podiumsList"></ol>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+      const store = window.TournamentStore;
+
+      const scoreFormatter = new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: 2,
+      });
+
+      function byTournamentRecency(a, b) {
+        const aDate = a.startDate ? Date.parse(a.startDate) : Number.NEGATIVE_INFINITY;
+        const bDate = b.startDate ? Date.parse(b.startDate) : Number.NEGATIVE_INFINITY;
+        if (aDate !== bDate) return bDate - aDate;
+        return String(b.id).localeCompare(String(a.id), undefined, { numeric: true, sensitivity: "base" });
+      }
+
+      function getRankedOverallRows(overallRows) {
+        let rank = 1;
+        return overallRows.map((row, idx) => {
+          if (idx > 0 && row.points !== overallRows[idx - 1].points) rank = idx + 1;
+          return { ...row, rank };
+        });
+      }
+
+      function placementText(rankedRows, placement) {
+        const names = rankedRows.filter((row) => row.rank === placement).map((row) => row.player);
+        if (!names.length) return "—";
+        if (names.length === 1) return names[0];
+        return `${names.join(" / ")} (tie)`;
+      }
+
+      function formatDate(dateString) {
+        if (!dateString) return "—";
+        const parsed = new Date(dateString);
+        if (Number.isNaN(parsed.getTime())) return dateString;
+        return parsed.toLocaleDateString();
+      }
+
+      function renderTopCountList(targetId, rows) {
+        const host = document.getElementById(targetId);
+        host.innerHTML = "";
+        if (!rows.length) {
+          host.innerHTML = "<li class='subtle'>No historical results yet.</li>";
+          return;
+        }
+
+        rows.slice(0, 5).forEach((row) => {
+          const item = document.createElement("li");
+          item.textContent = `${row.player} — ${row.count}`;
+          host.appendChild(item);
+        });
+      }
+
+      async function renderHallPage() {
+        const state = await store.loadState({ includeAllTournaments: true });
+        const tournaments = [...(state.tournaments || [])].sort(byTournamentRecency);
+        const championsBody = document.getElementById("championsBody");
+        const recordsGrid = document.getElementById("recordsGrid");
+
+        championsBody.innerHTML = "";
+        recordsGrid.innerHTML = "";
+
+        if (!tournaments.length) {
+          championsBody.innerHTML = '<tr><td colspan="5" class="subtle">No tournaments found.</td></tr>';
+          renderTopCountList("championshipsList", []);
+          renderTopCountList("podiumsList", []);
+          return;
+        }
+
+        const championshipCounts = new Map();
+        const podiumCounts = new Map();
+
+        tournaments.forEach((tournament) => {
+          const standings = store.getOverallStandingsForTournament(state, tournament.id);
+          const rankedRows = getRankedOverallRows(standings);
+
+          rankedRows.filter((row) => row.rank === 1).forEach((row) => {
+            championshipCounts.set(row.player, (championshipCounts.get(row.player) || 0) + 1);
+          });
+          rankedRows.filter((row) => row.rank <= 3).forEach((row) => {
+            podiumCounts.set(row.player, (podiumCounts.get(row.player) || 0) + 1);
+          });
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${store.escapeHtml(tournament.name)}</td>
+            <td>${store.escapeHtml(formatDate(tournament.startDate))}</td>
+            <td>${store.escapeHtml(placementText(rankedRows, 1))}</td>
+            <td>${store.escapeHtml(placementText(rankedRows, 2))}</td>
+            <td>${store.escapeHtml(placementText(rankedRows, 3))}</td>
+          `;
+          championsBody.appendChild(tr);
+        });
+
+        const gamesByName = new Map();
+        (state.games || []).forEach((game) => {
+          const key = store.normalizeName(game.name).toLowerCase();
+          if (!key) return;
+          if (!gamesByName.has(key)) gamesByName.set(key, []);
+          gamesByName.get(key).push(game);
+        });
+
+        const tournamentsById = new Map((state.tournaments || []).map((tournament) => [String(tournament.id), tournament]));
+
+        const records = [];
+        gamesByName.forEach((games, gameKey) => {
+          const scoresByPlayer = [];
+          games.forEach((game) => {
+            const ranked = store.getBestScoresByGameForTournament(state, game.tournamentId, { activeOnly: false })[game.id] || [];
+            ranked.forEach((entry) => {
+              scoresByPlayer.push({
+                ...entry,
+                game,
+                normalizedGameKey: gameKey,
+              });
+            });
+          });
+
+          if (!scoresByPlayer.length) return;
+
+          const direction = games[0].direction === "lower" ? "lower" : "higher";
+          const bestEntry = scoresByPlayer.reduce((best, current) => {
+            if (!best) return current;
+            if (direction === "higher") return current.score > best.score ? current : best;
+            return current.score < best.score ? current : best;
+          }, null);
+
+          const logoFromRecent = [...games]
+            .sort((a, b) => byTournamentRecency(tournamentsById.get(String(a.tournamentId)) || {}, tournamentsById.get(String(b.tournamentId)) || {}))
+            .find((game) => store.getLogoUrl(game));
+          const logoFromAny = games.find((game) => store.getLogoUrl(game));
+
+          records.push({
+            displayName: games[0].name,
+            logoUrl: store.getLogoUrl(logoFromRecent) || store.getLogoUrl(logoFromAny),
+            direction,
+            bestEntry,
+            tournament: tournamentsById.get(String(bestEntry.tournamentId)) || null,
+          });
+        });
+
+        records.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base", numeric: true }));
+
+        if (!records.length) {
+          recordsGrid.innerHTML = "<p class='subtle'>No game records available yet.</p>";
+        }
+
+        records.forEach((record) => {
+          const card = document.createElement("article");
+          card.className = "record-card";
+          const logoHtml = record.logoUrl
+            ? `<img class=\"record-logo\" src=\"${store.escapeHtml(record.logoUrl)}\" alt=\"${store.escapeHtml(record.displayName)} logo\" loading=\"lazy\" />`
+            : `<div class=\"record-logo record-logo-placeholder\" aria-label=\"No logo available\">${store.escapeHtml(store.getGameInitials(record.displayName))}</div>`;
+
+          card.innerHTML = `
+            <div class="record-logo-wrap">${logoHtml}</div>
+            <h3>${store.escapeHtml(record.displayName)}</h3>
+            <p><strong>Best score:</strong> ${store.escapeHtml(scoreFormatter.format(record.bestEntry.score))}</p>
+            <p><strong>Player:</strong> ${store.escapeHtml(record.bestEntry.playerName)}</p>
+            <p><strong>Tournament:</strong> ${store.escapeHtml(record.tournament?.name || "Unknown")}</p>
+            <p class="small subtle">${record.direction === "higher" ? "Higher score is better" : "Lower score is better"}</p>
+          `;
+          recordsGrid.appendChild(card);
+        });
+
+        const sortedChampionships = [...championshipCounts.entries()]
+          .map(([player, count]) => ({ player, count }))
+          .sort((a, b) => b.count - a.count || a.player.localeCompare(b.player));
+
+        const sortedPodiums = [...podiumCounts.entries()]
+          .map(([player, count]) => ({ player, count }))
+          .sort((a, b) => b.count - a.count || a.player.localeCompare(b.player));
+
+        renderTopCountList("championshipsList", sortedChampionships);
+        renderTopCountList("podiumsList", sortedPodiums);
+      }
+
+      (async () => {
+        await store.initializeStore();
+        const connection = store.getConnectionStatus();
+        if (!connection.available) {
+          document.getElementById("championsBody").innerHTML = `<tr><td colspan="5">${store.escapeHtml(connection.message)}</td></tr>`;
+          return;
+        }
+        await renderHallPage();
+      })();
+    </script>
+  </body>
+</html>
