@@ -342,7 +342,8 @@ async function getCurrentTournament() {
   return ensureCurrentTournament(state);
 }
 
-async function loadState() {
+async function loadState(options = {}) {
+  const { includeAllTournaments = false } = options;
   await initializeStore();
   const prefs = readLocalPrefs();
 
@@ -386,7 +387,7 @@ async function loadState() {
 
   const activeTournament = tournaments.find((t) => t.status === "active") || null;
 
-  if (!activeTournament) {
+  if (!activeTournament && !includeAllTournaments) {
     return {
       tournaments,
       currentTournamentId: null,
@@ -398,18 +399,28 @@ async function loadState() {
     };
   }
 
+  const tournamentScopeId = includeAllTournaments ? null : activeTournament?.id;
+
+  const gamesQuery = supabaseClient
+    .from("games")
+    .select("id,tournament_id,name,scoring_direction,min_score,max_score,logo_url,sort_order,is_active")
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (tournamentScopeId) {
+    gamesQuery.eq("tournament_id", tournamentScopeId);
+  }
+
+  const scoresQuery = supabaseClient
+    .from("scores")
+    .select("id,tournament_id,game_id,score_value,submitted_by_admin,created_at,player:players(id,name)")
+    .order("created_at", { ascending: true });
+  if (tournamentScopeId) {
+    scoresQuery.eq("tournament_id", tournamentScopeId);
+  }
+
   const [gamesResp, scoresResp] = await Promise.all([
-    supabaseClient
-      .from("games")
-      .select("id,tournament_id,name,scoring_direction,min_score,max_score,logo_url,sort_order,is_active")
-      .eq("tournament_id", activeTournament.id)
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true }),
-    supabaseClient
-      .from("scores")
-      .select("id,tournament_id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
-      .eq("tournament_id", activeTournament.id)
-      .order("created_at", { ascending: true }),
+    gamesQuery,
+    scoresQuery,
   ]);
 
   if (gamesResp.error || scoresResp.error) {
@@ -433,14 +444,16 @@ async function loadState() {
     )
     .filter((game) => game.name);
 
+  const gameById = new Map(games.map((game) => [String(game.id), game]));
+
   const submissions = (scoresResp.data || [])
     .map((row) => ({
       id: row.id,
       tournamentId: row.tournament_id,
       playerId: row.player?.id,
       playerName: normalizeName(row.player?.name),
-      gameId: row.game?.id,
-      gameName: normalizeName(row.game?.name),
+      gameId: row.game_id,
+      gameName: normalizeName(gameById.get(String(row.game_id))?.name),
       score: Number(row.score_value),
       enteredBy: row.submitted_by_admin ? "admin" : "player",
       createdAt: row.created_at,
@@ -449,7 +462,7 @@ async function loadState() {
 
   return {
     tournaments,
-    currentTournamentId: activeTournament.id,
+    currentTournamentId: activeTournament?.id || null,
     players,
     games,
     submissions,
@@ -832,25 +845,34 @@ function getActiveGames(state) {
   return getGamesSortedByName(state, { activeOnly: true });
 }
 
-function getGamesSortedByName(state, { activeOnly = false } = {}) {
-  const currentTournament = getCurrentTournamentFromState(state);
+function getGamesForTournament(state, tournamentId, { activeOnly = false } = {}) {
   return (state?.games || [])
-    .filter((game) =>
-      currentTournament ? String(game.tournamentId) === String(currentTournament.id) : false
-    )
+    .filter((game) => (tournamentId ? String(game.tournamentId) === String(tournamentId) : false))
     .filter((game) => (activeOnly ? game.isActive !== false : true))
+    .slice();
+}
+
+function getGamesSortedByName(state, { activeOnly = false, tournamentId } = {}) {
+  const currentTournament = getCurrentTournamentFromState(state);
+  const resolvedTournamentId = tournamentId || currentTournament?.id || null;
+  return getGamesForTournament(state, resolvedTournamentId, { activeOnly })
     .slice()
     .sort((a, b) => gameNameCollator.compare(normalizeName(a?.name), normalizeName(b?.name)));
 }
 
-function getBestScoresByGame(state) {
-  const result = {};
+function getSubmissionsForTournament(state, tournamentId) {
+  return (state?.submissions || []).filter((submission) =>
+    tournamentId ? String(submission.tournamentId) === String(tournamentId) : false
+  );
+}
 
-  for (const game of getActiveGames(state)) {
-    const filtered = state.submissions.filter(
-      (submission) =>
-        String(submission.gameId) === String(game.id) && String(submission.tournamentId) === String(game.tournamentId)
-    );
+function getBestScoresByGameForTournament(state, tournamentId, { activeOnly = true } = {}) {
+  const result = {};
+  const games = getGamesForTournament(state, tournamentId, { activeOnly });
+  const submissions = getSubmissionsForTournament(state, tournamentId);
+
+  for (const game of games) {
+    const filtered = submissions.filter((submission) => String(submission.gameId) === String(game.id));
     const bestByPlayer = new Map();
 
     for (const entry of filtered) {
@@ -873,6 +895,11 @@ function getBestScoresByGame(state) {
   return result;
 }
 
+function getBestScoresByGame(state) {
+  const currentTournament = getCurrentTournamentFromState(state);
+  return getBestScoresByGameForTournament(state, currentTournament?.id || null, { activeOnly: true });
+}
+
 function calculateGamePoints(rankedScores) {
   const k = rankedScores.length;
   const withPoints = [];
@@ -892,13 +919,9 @@ function calculateGamePoints(rankedScores) {
   return withPoints;
 }
 
-function getOverallStandings(state) {
-  const currentTournament = getCurrentTournamentFromState(state);
+function getOverallStandingsForTournament(state, tournamentId) {
   const participatingPlayerIds = new Set(
-    (state.submissions || [])
-      .filter((submission) =>
-        currentTournament ? String(submission.tournamentId) === String(currentTournament.id) : false
-      )
+    getSubmissionsForTournament(state, tournamentId)
       .map((submission) => submission.playerId)
   );
 
@@ -908,8 +931,8 @@ function getOverallStandings(state) {
     totals.set(player.id, { player: player.name, points: 0 });
   }
 
-  const bestByGame = getBestScoresByGame(state);
-  for (const game of getActiveGames(state)) {
+  const bestByGame = getBestScoresByGameForTournament(state, tournamentId, { activeOnly: true });
+  for (const game of getGamesForTournament(state, tournamentId, { activeOnly: true })) {
     const scored = calculateGamePoints(bestByGame[game.id] || []);
     for (const row of scored) {
       if (!totals.has(row.playerId)) continue;
@@ -918,6 +941,11 @@ function getOverallStandings(state) {
   }
 
   return [...totals.values()].sort((a, b) => b.points - a.points || a.player.localeCompare(b.player));
+}
+
+function getOverallStandings(state) {
+  const currentTournament = getCurrentTournamentFromState(state);
+  return getOverallStandingsForTournament(state, currentTournament?.id || null);
 }
 
 async function renderTVPage() {
@@ -1004,9 +1032,13 @@ window.TournamentStore = {
   getCurrentTournamentFromState,
   ensureCurrentTournament,
   getActiveGames,
+  getGamesForTournament,
   getGamesSortedByName,
+  getSubmissionsForTournament,
+  getBestScoresByGameForTournament,
   getBestScoresByGame,
   calculateGamePoints,
+  getOverallStandingsForTournament,
   getOverallStandings,
   renderTVPage,
   escapeHtml,

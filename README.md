@@ -129,6 +129,7 @@ In Supabase project settings, copy:
 - `/index.html` — Home/menu.
 - `/submit.html` — player score entry.
 - `/leaderboards.html` — per-game + overall standings.
+- `/hall.html` — historical champions and all-time records by game.
 - `/tv.html` — TV-friendly top-3 per game.
 - `/admin.html` — manage players/games and admin score entry.
 - `/results.html` — admin reveal/hide control for overall standings.
