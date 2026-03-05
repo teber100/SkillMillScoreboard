@@ -105,6 +105,40 @@
           </form>
           <p id="adminScoreStatus" class="status"></p>
         </section>
+
+        <section class="card">
+          <h2>Official Results (Legacy Winners)</h2>
+          <p class="small subtle">Store official 1st/2nd/3rd winners for legacy years with alternate scoring.</p>
+          <div class="grid">
+            <div>
+              <label for="officialTournamentSelect">Tournament</label>
+              <select id="officialTournamentSelect"></select>
+            </div>
+            <div class="inline">
+              <div>
+                <label for="officialFirstSelect">Champion (1st)</label>
+                <select id="officialFirstSelect"></select>
+              </div>
+              <div>
+                <label for="officialSecondSelect">2nd place</label>
+                <select id="officialSecondSelect"></select>
+              </div>
+              <div>
+                <label for="officialThirdSelect">3rd place</label>
+                <select id="officialThirdSelect"></select>
+              </div>
+            </div>
+            <div>
+              <label for="officialNotesInput">Notes (optional)</label>
+              <textarea id="officialNotesInput" rows="2" placeholder="Example: 2019 included team NBA Jam/Blitz scoring"></textarea>
+            </div>
+            <div class="inline">
+              <button id="saveOfficialPodiumBtn" type="button">Save Official Podium</button>
+              <button id="clearOfficialPodiumBtn" type="button" class="danger">Clear Official Podium</button>
+            </div>
+            <p id="officialPodiumStatus" class="status"></p>
+          </div>
+        </section>
       </section>
     </main>
 
@@ -128,6 +162,12 @@
       const tournamentActionStatus = document.getElementById("tournamentActionStatus");
       const currentTournamentSelect = document.getElementById("currentTournamentSelect");
       const cloneTournamentSelect = document.getElementById("cloneTournamentSelect");
+      const officialTournamentSelect = document.getElementById("officialTournamentSelect");
+      const officialFirstSelect = document.getElementById("officialFirstSelect");
+      const officialSecondSelect = document.getElementById("officialSecondSelect");
+      const officialThirdSelect = document.getElementById("officialThirdSelect");
+      const officialNotesInput = document.getElementById("officialNotesInput");
+      const officialPodiumStatus = document.getElementById("officialPodiumStatus");
       let state = null;
 
       function isUnlocked() {
@@ -152,6 +192,9 @@
         cloneTournamentSelect.innerHTML =
           `<option value="">-- Do not clone --</option>` +
           tournaments.map((t) => `<option value="${t.id}">${store.escapeHtml(t.name)}</option>`).join("");
+        officialTournamentSelect.innerHTML = tournaments
+          .map((t) => `<option value="${t.id}">${store.escapeHtml(t.name)}${t.startDate ? ` (${store.escapeHtml(t.startDate)})` : ""}</option>`)
+          .join("");
 
         const currentTournament = store.getCurrentTournamentFromState(state);
         if (!currentTournament) {
@@ -164,6 +207,50 @@
         currentTournamentSelect.value = currentTournament.id;
         currentTournamentStatus.textContent = `Current active tournament: ${currentTournament.name}`;
         currentTournamentStatus.className = "status ok";
+      }
+
+      function renderOfficialPlayerSelects() {
+        const options = [`<option value="">Select player</option>`]
+          .concat(state.players.map((p) => `<option value="${p.id}">${store.escapeHtml(p.name)}</option>`))
+          .join("");
+        officialFirstSelect.innerHTML = options;
+        officialSecondSelect.innerHTML = options;
+        officialThirdSelect.innerHTML = options;
+      }
+
+      async function loadOfficialPodiumForm() {
+        const tournamentId = officialTournamentSelect.value;
+        officialPodiumStatus.textContent = "";
+        officialPodiumStatus.className = "status";
+        officialNotesInput.value = "";
+        officialFirstSelect.value = "";
+        officialSecondSelect.value = "";
+        officialThirdSelect.value = "";
+        if (!tournamentId) return;
+
+        try {
+          const podium = await store.fetchOfficialPodium(tournamentId);
+          if (!podium) return;
+          officialFirstSelect.value = podium.places?.[1]?.playerId || "";
+          officialSecondSelect.value = podium.places?.[2]?.playerId || "";
+          officialThirdSelect.value = podium.places?.[3]?.playerId || "";
+          officialNotesInput.value = podium.notes || "";
+          officialPodiumStatus.textContent = "Loaded saved official podium.";
+          officialPodiumStatus.className = "status";
+        } catch (error) {
+          officialPodiumStatus.textContent = error?.message || "Could not load official podium.";
+          officialPodiumStatus.className = "status warn";
+        }
+      }
+
+      function validatePodiumSelection() {
+        const selected = [officialFirstSelect.value, officialSecondSelect.value, officialThirdSelect.value].filter(Boolean);
+        if (new Set(selected).size !== selected.length) {
+          officialPodiumStatus.textContent = "Choose different players for 1st, 2nd, and 3rd.";
+          officialPodiumStatus.className = "status warn";
+          return false;
+        }
+        return true;
       }
 
       function renderPlayerAndGameSelects() {
@@ -261,6 +348,8 @@
         renderGames();
         renderPlayerAndGameSelects();
         renderScoreManagement();
+        renderOfficialPlayerSelects();
+        await loadOfficialPodiumForm();
       }
 
       function renderPlayers() {
@@ -417,6 +506,52 @@
 
       scorePlayerSelect.addEventListener("change", () => {
         renderScoreManagement();
+      });
+
+      officialTournamentSelect.addEventListener("change", loadOfficialPodiumForm);
+
+      document.getElementById("saveOfficialPodiumBtn").addEventListener("click", async () => {
+        if (!validatePodiumSelection()) return;
+        const tournamentId = officialTournamentSelect.value;
+        if (!tournamentId || !officialFirstSelect.value || !officialSecondSelect.value || !officialThirdSelect.value) {
+          officialPodiumStatus.textContent = "Tournament and all podium places are required.";
+          officialPodiumStatus.className = "status warn";
+          return;
+        }
+        try {
+          await store.upsertOfficialPodium(
+            tournamentId,
+            {
+              1: officialFirstSelect.value,
+              2: officialSecondSelect.value,
+              3: officialThirdSelect.value,
+            },
+            officialNotesInput.value
+          );
+          officialPodiumStatus.textContent = "Official podium saved.";
+          officialPodiumStatus.className = "status ok";
+        } catch (error) {
+          officialPodiumStatus.textContent = error?.message || "Could not save official podium.";
+          officialPodiumStatus.className = "status warn";
+        }
+      });
+
+      document.getElementById("clearOfficialPodiumBtn").addEventListener("click", async () => {
+        const tournamentId = officialTournamentSelect.value;
+        if (!tournamentId) return;
+        if (!confirm("Clear official podium for this tournament?")) return;
+        try {
+          await store.clearOfficialPodium(tournamentId);
+          officialFirstSelect.value = "";
+          officialSecondSelect.value = "";
+          officialThirdSelect.value = "";
+          officialNotesInput.value = "";
+          officialPodiumStatus.textContent = "Official podium cleared.";
+          officialPodiumStatus.className = "status ok";
+        } catch (error) {
+          officialPodiumStatus.textContent = error?.message || "Could not clear official podium.";
+          officialPodiumStatus.className = "status warn";
+        }
       });
 
 

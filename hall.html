@@ -29,6 +29,7 @@
               <tr>
                 <th>Tournament</th>
                 <th>Date</th>
+                <th>Result Source</th>
                 <th>Champion (1st)</th>
                 <th>Runner-up (2nd)</th>
                 <th>3rd Place</th>
@@ -93,6 +94,10 @@
         return `${names.join(" / ")} (tie)`;
       }
 
+      function placementFromOfficial(podium, placement) {
+        return podium?.places?.[placement]?.playerName || "—";
+      }
+
       function formatDate(dateString) {
         if (!dateString) return "—";
         const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
@@ -127,7 +132,7 @@
         recordsGrid.innerHTML = "";
 
         if (!tournaments.length) {
-          championsBody.innerHTML = '<tr><td colspan="5" class="subtle">No tournaments found.</td></tr>';
+          championsBody.innerHTML = '<tr><td colspan="6" class="subtle">No tournaments found.</td></tr>';
           renderTopCountList("championshipsList", []);
           renderTopCountList("podiumsList", []);
           return;
@@ -137,24 +142,58 @@
         const podiumCounts = new Map();
 
         tournaments.forEach((tournament) => {
-          const standings = store.getOverallStandingsForTournament(state, tournament.id);
-          const sortedStandings = [...standings].sort(byStandingsOrder);
-          const rankedRows = getRankedOverallRows(sortedStandings);
+          const officialPodium = state.officialPodiums?.[String(tournament.id)] || null;
+          const hasOfficialPodium = Boolean(
+            officialPodium?.places?.[1]?.playerName &&
+            officialPodium?.places?.[2]?.playerName &&
+            officialPodium?.places?.[3]?.playerName
+          );
 
-          rankedRows.filter((row) => row.rank === 1).forEach((row) => {
-            championshipCounts.set(row.player, (championshipCounts.get(row.player) || 0) + 1);
-          });
-          rankedRows.filter((row) => row.rank <= 3).forEach((row) => {
-            podiumCounts.set(row.player, (podiumCounts.get(row.player) || 0) + 1);
-          });
+          let firstPlace = "—";
+          let secondPlace = "—";
+          let thirdPlace = "—";
+          let sourceLabel = "Computed (standard scoring)";
+          let sourceNotes = "";
+
+          if (hasOfficialPodium) {
+            firstPlace = placementFromOfficial(officialPodium, 1);
+            secondPlace = placementFromOfficial(officialPodium, 2);
+            thirdPlace = placementFromOfficial(officialPodium, 3);
+            sourceLabel = "Official (legacy scoring)";
+            sourceNotes = officialPodium.notes || "";
+            [firstPlace].forEach((name) => {
+              championshipCounts.set(name, (championshipCounts.get(name) || 0) + 1);
+            });
+            [firstPlace, secondPlace, thirdPlace].forEach((name) => {
+              podiumCounts.set(name, (podiumCounts.get(name) || 0) + 1);
+            });
+          } else {
+            const standings = store.getOverallStandingsForTournament(state, tournament.id);
+            const sortedStandings = [...standings].sort(byStandingsOrder);
+            const rankedRows = getRankedOverallRows(sortedStandings);
+            firstPlace = placementText(rankedRows, 1);
+            secondPlace = placementText(rankedRows, 2);
+            thirdPlace = placementText(rankedRows, 3);
+
+            rankedRows.filter((row) => row.rank === 1).forEach((row) => {
+              championshipCounts.set(row.player, (championshipCounts.get(row.player) || 0) + 1);
+            });
+            rankedRows.filter((row) => row.rank <= 3).forEach((row) => {
+              podiumCounts.set(row.player, (podiumCounts.get(row.player) || 0) + 1);
+            });
+          }
 
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td>${store.escapeHtml(tournament.name)}</td>
             <td>${store.escapeHtml(formatDate(tournament.startDate))}</td>
-            <td>${store.escapeHtml(placementText(rankedRows, 1))}</td>
-            <td>${store.escapeHtml(placementText(rankedRows, 2))}</td>
-            <td>${store.escapeHtml(placementText(rankedRows, 3))}</td>
+            <td>
+              <span class="results-source-badge ${hasOfficialPodium ? "official" : "computed"}">${store.escapeHtml(sourceLabel)}</span>
+              ${sourceNotes ? `<div class="small subtle">${store.escapeHtml(sourceNotes)}</div>` : ""}
+            </td>
+            <td>${store.escapeHtml(firstPlace)}</td>
+            <td>${store.escapeHtml(secondPlace)}</td>
+            <td>${store.escapeHtml(thirdPlace)}</td>
           `;
           championsBody.appendChild(tr);
         });
@@ -246,7 +285,7 @@
         await store.initializeStore();
         const connection = store.getConnectionStatus();
         if (!connection.available) {
-          document.getElementById("championsBody").innerHTML = `<tr><td colspan="5">${store.escapeHtml(connection.message)}</td></tr>`;
+          document.getElementById("championsBody").innerHTML = `<tr><td colspan="6">${store.escapeHtml(connection.message)}</td></tr>`;
           return;
         }
         await renderHallPage();
