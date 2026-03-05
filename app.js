@@ -565,7 +565,6 @@ function normalizeOfficialPodiumRows(rows) {
     };
     if (!notes && row.notes) notes = row.notes;
   });
-  if (!places[1] || !places[2] || !places[3]) return null;
   return { notes, places };
 }
 
@@ -589,43 +588,66 @@ async function fetchOfficialPodium(tournamentId) {
 
 async function upsertOfficialPodium(tournamentId, podium, notes) {
   if (!tournamentId) throw new Error("Tournament is required.");
-  const first = Number(podium?.[1]);
-  const second = Number(podium?.[2]);
-  const third = Number(podium?.[3]);
-  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(third)) {
-    throw new Error("All 3 podium places are required.");
+
+  const placements = [1, 2, 3];
+  const parsedPodium = Object.fromEntries(
+    placements.map((place) => [place, Number(podium?.[place])])
+  );
+  const normalizedNotes = notes ? String(notes).trim() : null;
+
+  if (!Number.isFinite(parsedPodium[1])) {
+    throw new Error("Champion (1st place) is required.");
   }
 
-  const ids = [first, second, third].map((id) => String(id));
-  if (new Set(ids).size !== 3) throw new Error("Each podium place must have a different player.");
+  const filledPlaces = placements.filter((place) => Number.isFinite(parsedPodium[place]));
+  const ids = filledPlaces.map((place) => String(parsedPodium[place]));
+  if (new Set(ids).size !== ids.length) throw new Error("Each filled podium place must have a different player.");
 
-  const payload = [1, 2, 3].map((place) => ({
+  const payload = filledPlaces.map((place) => ({
     tournament_id: tournamentId,
     place,
-    player_id: Number(podium[place]),
-    notes: notes ? String(notes).trim() : null,
+    player_id: parsedPodium[place],
+    notes: normalizedNotes,
   }));
+  const placesToClear = placements.filter((place) => !filledPlaces.includes(place));
 
   if (connectionStatus.mode === "local") {
     const state = await loadState();
     const playerById = new Map((state.players || []).map((player) => [String(player.id), player]));
+    const localPlaces = {};
+    filledPlaces.forEach((place) => {
+      const playerId = parsedPodium[place];
+      localPlaces[place] = {
+        playerId,
+        playerName: playerById.get(String(playerId))?.name || "Unknown",
+      };
+    });
+
     state.officialPodiums = state.officialPodiums || {};
     state.officialPodiums[String(tournamentId)] = {
-      notes: notes ? String(notes).trim() : null,
-      places: {
-        1: { playerId: first, playerName: playerById.get(String(first))?.name || "Unknown" },
-        2: { playerId: second, playerName: playerById.get(String(second))?.name || "Unknown" },
-        3: { playerId: third, playerName: playerById.get(String(third))?.name || "Unknown" },
-      },
+      notes: normalizedNotes,
+      places: localPlaces,
     };
     await saveState(state);
     return;
   }
 
-  const { error } = await supabaseClient
-    .from("tournament_results")
-    .upsert(payload, { onConflict: "tournament_id,place" });
-  if (error) throw error;
+  if (payload.length) {
+    const { error: upsertError } = await supabaseClient
+      .from("tournament_results")
+      .upsert(payload, { onConflict: "tournament_id,place" });
+    if (upsertError) throw upsertError;
+  }
+
+  if (placesToClear.length) {
+    const { error: deleteError } = await supabaseClient
+      .from("tournament_results")
+      .delete()
+      .eq("tournament_id", tournamentId)
+      .in("place", placesToClear);
+    if (deleteError) throw deleteError;
+  }
+
   clearHallAllTournamentsCache();
 }
 
