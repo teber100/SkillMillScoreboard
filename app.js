@@ -1074,6 +1074,50 @@ function getGamesSortedByName(state, { activeOnly = false, tournamentId } = {}) 
     .sort((a, b) => gameNameCollator.compare(normalizeName(a?.name), normalizeName(b?.name)));
 }
 
+
+function getPlayerParticipationMap(state) {
+  const map = new Map();
+  for (const submission of state?.submissions || []) {
+    const playerId = String(submission.playerId || "");
+    if (!playerId) continue;
+    if (!map.has(playerId)) {
+      map.set(playerId, new Set());
+    }
+    map.get(playerId).add(String(submission.tournamentId || ""));
+  }
+  return map;
+}
+
+function getProfilePlayerOptions(state, { repeatOnly = false } = {}) {
+  const tournamentsById = new Map((state?.tournaments || []).map((t) => [String(t.id), t]));
+  const participation = getPlayerParticipationMap(state);
+
+  return (state?.players || [])
+    .map((player) => {
+      const tournamentIds = [...(participation.get(String(player.id)) || new Set())].filter(Boolean);
+      const mostRecentDate = tournamentIds.reduce((maxDate, tournamentId) => {
+        const nextDate = getTournamentDateValue(tournamentsById.get(String(tournamentId)));
+        return nextDate > maxDate ? nextDate : maxDate;
+      }, Number.NEGATIVE_INFINITY);
+      return {
+        playerId: player.id,
+        playerName: player.name,
+        tournamentIds,
+        tournamentCount: tournamentIds.length,
+        mostRecentDate,
+      };
+    })
+    .filter((row) => row.tournamentCount > 0)
+    .filter((row) => (repeatOnly ? row.tournamentCount >= 2 : true))
+    .sort((a, b) => {
+      if (a.mostRecentDate !== b.mostRecentDate) return b.mostRecentDate - a.mostRecentDate;
+      return String(a.playerName).localeCompare(String(b.playerName), undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+    });
+}
+
 function getSubmissionsForTournament(state, tournamentId) {
   return (state?.submissions || []).filter((submission) =>
     tournamentId ? String(submission.tournamentId) === String(tournamentId) : false
@@ -1155,6 +1199,47 @@ function getOverallStandingsForTournament(state, tournamentId) {
   }
 
   return [...totals.values()].sort((a, b) => b.points - a.points || a.player.localeCompare(b.player));
+}
+
+
+function getTournamentDateValue(tournament) {
+  if (!tournament?.startDate) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(tournament.startDate);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function compareTournamentsByRecency(a, b) {
+  const dateDiff = getTournamentDateValue(b) - getTournamentDateValue(a);
+  if (dateDiff !== 0) return dateDiff;
+  return String(a?.id || "").localeCompare(String(b?.id || ""), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function getRankedOverallRows(overallRows) {
+  let rank = 1;
+  return (overallRows || []).map((row, idx) => {
+    if (idx > 0 && row.points !== overallRows[idx - 1].points) {
+      rank = idx + 1;
+    }
+    return { ...row, rank };
+  });
+}
+
+function createTournamentStandingsCache(state) {
+  const cache = new Map();
+  return {
+    get(tournamentId) {
+      const key = String(tournamentId || "");
+      if (!key) return [];
+      if (!cache.has(key)) {
+        const standings = getOverallStandingsForTournament(state, tournamentId);
+        cache.set(key, getRankedOverallRows(standings));
+      }
+      return cache.get(key);
+    },
+  };
 }
 
 function getOverallStandings(state) {
@@ -1248,12 +1333,18 @@ window.TournamentStore = {
   getActiveGames,
   getGamesForTournament,
   getGamesSortedByName,
+  getPlayerParticipationMap,
+  getProfilePlayerOptions,
   getSubmissionsForTournament,
   getBestScoresByGameForTournament,
   getBestScoresByGame,
   calculateGamePoints,
   getOverallStandingsForTournament,
   getOverallStandings,
+  getTournamentDateValue,
+  compareTournamentsByRecency,
+  getRankedOverallRows,
+  createTournamentStandingsCache,
   renderTVPage,
   escapeHtml,
   createTournament,

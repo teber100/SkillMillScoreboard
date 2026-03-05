@@ -518,3 +518,38 @@ td {
   color: #5a6a80;
   border-color: #d2dbe7;
 }
+
+.profile-filter-wrap {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.profile-toggle {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+
+.profile-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.profile-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.profile-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.2rem 0.8rem;
+}
+
+.profile-overview-grid p {
+  margin: 0.2rem 0;
+}
