@@ -136,8 +136,22 @@
 
         tournaments.forEach((tournament) => {
           const standings = store.getOverallStandingsForTournament(state, tournament.id);
+          
+            if (String(tournament.name).includes("2019")) {
+    console.log("2019 tournament:", tournament);
+    console.log("2019 standings RAW:", standings);  }
+          
           const sortedStandings = [...standings].sort(byStandingsOrder);
+          
+            if (String(tournament.name).includes("2019")) {
+    console.log("2019 standings SORTED:", sortedStandings);
+  }
+
           const rankedRows = getRankedOverallRows(sortedStandings);
+          
+           if (String(tournament.name).includes("2019")) {
+    console.log("2019 rankedRows:", rankedRows);
+  }
 
           rankedRows.filter((row) => row.rank === 1).forEach((row) => {
             championshipCounts.set(row.player, (championshipCounts.get(row.player) || 0) + 1);
