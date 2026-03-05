@@ -13,6 +13,7 @@
         <a href="submit.html">Submit</a>
         <a href="leaderboards.html">Leaderboards</a>
         <a href="hall.html">Hall of Champions</a>
+        <a href="player.html">Player Profiles</a>
         <a href="tv.html">TV Display</a>
       </nav>
 
@@ -87,15 +88,21 @@
         return b.points - a.points || String(a.player).localeCompare(String(b.player));
       }
 
+      function playerProfileLink(name) {
+        const safeName = store.normalizeName(name);
+        if (!safeName || safeName === "—") return "—";
+        return `<a href="player.html?playerName=${encodeURIComponent(safeName)}">${store.escapeHtml(safeName)}</a>`;
+      }
+
       function placementText(rankedRows, placement) {
         const names = rankedRows.filter((row) => row.rank === placement).map((row) => row.player);
         if (!names.length) return "—";
-        if (names.length === 1) return names[0];
-        return `${names.join(" / ")} (tie)`;
+        if (names.length === 1) return playerProfileLink(names[0]);
+        return `${names.map((name) => playerProfileLink(name)).join(" / ")} (tie)`;
       }
 
       function placementFromOfficial(podium, placement) {
-        return podium?.places?.[placement]?.playerName || "—";
+        return playerProfileLink(podium?.places?.[placement]?.playerName || "—");
       }
 
       function formatDate(dateString) {
@@ -117,7 +124,7 @@
 
         rows.slice(0, 5).forEach((row) => {
           const item = document.createElement("li");
-          item.textContent = `${row.player} — ${row.count}`;
+          item.innerHTML = `${playerProfileLink(row.player)} — ${row.count}`;
           host.appendChild(item);
         });
       }
@@ -166,10 +173,13 @@
             thirdPlace = placementFromOfficial(officialPodium, 3);
             sourceLabel = hasCompleteOfficialPodium ? "Official (legacy scoring)" : "Official (partial)";
             sourceNotes = officialPodium.notes || "";
-            [firstPlace].filter((name) => name !== "—").forEach((name) => {
-              championshipCounts.set(name, (championshipCounts.get(name) || 0) + 1);
-            });
-            [firstPlace, secondPlace, thirdPlace].filter((name) => name !== "—").forEach((name) => {
+            const officialNames = [1, 2, 3]
+              .map((place) => officialPodium?.places?.[place]?.playerName)
+              .map((name) => store.normalizeName(name))
+              .filter(Boolean);
+            const championName = store.normalizeName(officialPodium?.places?.[1]?.playerName);
+            if (championName) championshipCounts.set(championName, (championshipCounts.get(championName) || 0) + 1);
+            officialNames.forEach((name) => {
               podiumCounts.set(name, (podiumCounts.get(name) || 0) + 1);
             });
           } else {
@@ -196,9 +206,9 @@
               <span class="results-source-badge ${hasAnyOfficialResults ? "official" : "computed"}">${store.escapeHtml(sourceLabel)}</span>
               ${sourceNotes ? `<div class="small subtle">${store.escapeHtml(sourceNotes)}</div>` : ""}
             </td>
-            <td>${store.escapeHtml(firstPlace)}</td>
-            <td>${store.escapeHtml(secondPlace)}</td>
-            <td>${store.escapeHtml(thirdPlace)}</td>
+            <td>${firstPlace}</td>
+            <td>${secondPlace}</td>
+            <td>${thirdPlace}</td>
           `;
           championsBody.appendChild(tr);
         });

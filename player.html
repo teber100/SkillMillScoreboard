@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Player Profiles</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <nav class="top-nav" aria-label="Site navigation">
+        <a href="index.html">Home</a>
+        <a href="submit.html">Submit</a>
+        <a href="leaderboards.html">Leaderboards</a>
+        <a href="hall.html">Hall of Champions</a>
+        <a href="player.html">Player Profiles</a>
+        <a href="tv.html">TV Display</a>
+      </nav>
+
+      <section class="card">
+        <h1>Player Profiles</h1>
+        <p class="subtle">Read-only historical stats powered by tournament score history.</p>
+
+        <div class="profile-filter-wrap">
+          <div class="profile-toggle" role="radiogroup" aria-label="Player filter">
+            <label><input type="radio" name="playerScope" value="all" checked /> All players</label>
+            <label><input type="radio" name="playerScope" value="repeat" /> Repeat players (2+ tournaments)</label>
+          </div>
+          <label for="playerSelect">Player</label>
+          <select id="playerSelect">
+            <option value="">Select a player…</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Overview</h2>
+        <div id="profileOverview" class="profile-overview subtle">Select a player to view profile stats.</div>
+      </section>
+
+      <section class="card">
+        <h2>By Year</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tournament</th>
+                <th>Date</th>
+                <th>Overall finish</th>
+                <th>Total points</th>
+                <th>Games played</th>
+              </tr>
+            </thead>
+            <tbody id="byYearBody">
+              <tr><td colspan="5" class="subtle">Select a player to view yearly rows.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>By Game</h2>
+        <div id="byGameGrid" class="records-grid">
+          <p class="subtle">Select a player to view all-time game results.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+      const store = window.TournamentStore;
+      const scoreFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+
+      function formatDate(dateString) {
+        if (!dateString) return "—";
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+          ? new Date(`${dateString}T12:00:00`)
+          : new Date(dateString);
+        if (Number.isNaN(parsed.getTime())) return dateString;
+        return parsed.toLocaleDateString();
+      }
+
+      function getQuerySelection(state) {
+        const params = new URLSearchParams(window.location.search);
+        const byId = params.get("playerId");
+        if (byId && (state.players || []).some((player) => String(player.id) === String(byId))) {
+          return String(byId);
+        }
+
+        const byName = store.normalizeName(params.get("playerName"));
+        if (!byName) return "";
+        const match = (state.players || []).find(
+          (player) => store.normalizeName(player.name).toLowerCase() === byName.toLowerCase()
+        );
+        return match ? String(match.id) : "";
+      }
+
+      function getTournamentLabel(tournament) {
+        if (!tournament) return "Unknown tournament";
+        const year = tournament.startDate ? new Date(`${tournament.startDate}T12:00:00`).getFullYear() : "";
+        return year && Number.isFinite(year) ? `${tournament.name} (${year})` : tournament.name;
+      }
+
+      function renderEmptyProfile() {
+        document.getElementById("profileOverview").innerHTML = '<p class="subtle">Select a player to view profile stats.</p>';
+        document.getElementById("byYearBody").innerHTML = '<tr><td colspan="5" class="subtle">Select a player to view yearly rows.</td></tr>';
+        document.getElementById("byGameGrid").innerHTML = '<p class="subtle">Select a player to view all-time game results.</p>';
+      }
+
+      function buildProfile(state, playerId) {
+        const player = (state.players || []).find((row) => String(row.id) === String(playerId));
+        if (!player) return null;
+
+        const tournamentsById = new Map((state.tournaments || []).map((t) => [String(t.id), t]));
+        const standingsCache = store.createTournamentStandingsCache(state);
+        const submissions = (state.submissions || []).filter((entry) => String(entry.playerId) === String(player.id));
+        const participatedTournamentIds = [...new Set(submissions.map((entry) => String(entry.tournamentId)).filter(Boolean))];
+
+        const yearly = participatedTournamentIds
+          .map((tournamentId) => {
+            const tournament = tournamentsById.get(String(tournamentId)) || null;
+            const standings = standingsCache.get(tournamentId);
+            const playerStanding = standings.find(
+              (row) => store.normalizeName(row.player).toLowerCase() === store.normalizeName(player.name).toLowerCase()
+            );
+            const bestByGame = store.getBestScoresByGameForTournament(state, tournamentId, { activeOnly: true });
+            const gamesPlayed = Object.values(bestByGame).reduce(
+              (count, ranked) => (ranked.some((entry) => String(entry.playerId) === String(player.id)) ? count + 1 : count),
+              0
+            );
+
+            return {
+              tournamentId,
+              tournament,
+              dateValue: store.getTournamentDateValue(tournament),
+              standing: playerStanding || null,
+              gamesPlayed,
+            };
+          })
+          .sort((a, b) => store.compareTournamentsByRecency(b.tournament || {}, a.tournament || {}));
+
+        const sortedByRecency = [...yearly].sort((a, b) => store.compareTournamentsByRecency(a.tournament || {}, b.tournament || {}));
+        const rookie = yearly[0] || null;
+        const lastSeen = sortedByRecency[0] || null;
+
+        let championships = 0;
+        let podiums = 0;
+
+        yearly.forEach((row) => {
+          const official = state.officialPodiums?.[String(row.tournamentId)] || null;
+          const officialPlaces = [1, 2, 3]
+            .map((place) => official?.places?.[place]?.playerId)
+            .filter((id) => id != null)
+            .map(String);
+
+          if (officialPlaces.length) {
+            if (String(official?.places?.[1]?.playerId) === String(player.id)) championships += 1;
+            if (officialPlaces.includes(String(player.id))) podiums += 1;
+            return;
+          }
+
+          if (row.standing?.rank === 1) championships += 1;
+          if (row.standing?.rank <= 3) podiums += 1;
+        });
+
+        const bestOverall = yearly
+          .filter((row) => Number.isFinite(row.standing?.rank))
+          .sort((a, b) => a.standing.rank - b.standing.rank || b.dateValue - a.dateValue)[0] || null;
+
+        const byGameMap = new Map();
+        const groupedGames = new Map();
+        (state.games || []).forEach((game) => {
+          const key = store.normalizeName(game.name).toLowerCase();
+          if (!key) return;
+          if (!groupedGames.has(key)) groupedGames.set(key, []);
+          groupedGames.get(key).push(game);
+        });
+
+        submissions.forEach((entry) => {
+          const game = (state.games || []).find((g) => String(g.id) === String(entry.gameId));
+          if (!game) return;
+          const key = store.normalizeName(game.name).toLowerCase();
+          if (!key) return;
+
+          const existing = byGameMap.get(key);
+          const isBetter =
+            !existing ||
+            (game.direction === "higher" && entry.score > existing.bestEntry.score) ||
+            (game.direction === "lower" && entry.score < existing.bestEntry.score);
+
+          if (isBetter) {
+            byGameMap.set(key, {
+              gameName: game.name,
+              game,
+              bestEntry: entry,
+            });
+          }
+        });
+
+        const byGame = [...byGameMap.entries()].map(([key, value]) => {
+          const gameVariants = groupedGames.get(key) || [];
+          const tournamentsByVariant = gameVariants
+            .map((game) => ({ game, tournament: tournamentsById.get(String(game.tournamentId)) || null }))
+            .sort((a, b) => store.compareTournamentsByRecency(a.tournament || {}, b.tournament || {}));
+
+          const logoFromRecent = tournamentsByVariant.find((row) => store.getLogoUrl(row.game));
+          const logoFromAny = gameVariants.find((game) => store.getLogoUrl(game));
+
+          let podiumCount = 0;
+          gameVariants.forEach((variant) => {
+            const ranked = store.calculateGamePoints(store.getBestScoresByGameForTournament(state, variant.tournamentId, { activeOnly: false })[variant.id] || []);
+            if (ranked.some((row) => String(row.playerId) === String(player.id) && row.rank <= 3)) {
+              podiumCount += 1;
+            }
+          });
+
+          const bestTournament = tournamentsById.get(String(value.bestEntry.tournamentId)) || null;
+
+          return {
+            gameName: value.gameName,
+            logoUrl: store.getLogoUrl(logoFromRecent?.game) || store.getLogoUrl(logoFromAny),
+            bestScore: value.bestEntry.score,
+            bestTournament,
+            podiumCount,
+          };
+        });
+
+        byGame.sort((a, b) => a.gameName.localeCompare(b.gameName, undefined, { sensitivity: "base", numeric: true }));
+
+        return {
+          player,
+          yearly,
+          rookie,
+          lastSeen,
+          championships,
+          podiums,
+          bestOverall,
+          byGame,
+          distinctGames: byGame.length,
+        };
+      }
+
+      function renderProfile(profile) {
+        if (!profile) {
+          renderEmptyProfile();
+          return;
+        }
+
+        const overview = document.getElementById("profileOverview");
+        const byYearBody = document.getElementById("byYearBody");
+        const byGameGrid = document.getElementById("byGameGrid");
+
+        const competedLabels = profile.yearly.map((row) => getTournamentLabel(row.tournament));
+        overview.innerHTML = `
+          <div class="profile-overview-grid">
+            <p><strong>Years competed:</strong> ${store.escapeHtml(competedLabels.join(", ") || "—")} (${profile.yearly.length})</p>
+            <p><strong>Rookie year:</strong> ${store.escapeHtml(getTournamentLabel(profile.rookie?.tournament))}</p>
+            <p><strong>Last seen:</strong> ${store.escapeHtml(getTournamentLabel(profile.lastSeen?.tournament))}</p>
+            <p><strong># Tournaments played:</strong> ${profile.yearly.length}</p>
+            <p><strong># Championships:</strong> ${profile.championships}</p>
+            <p><strong># Overall podium finishes:</strong> ${profile.podiums}</p>
+            <p><strong>Best overall finish:</strong> ${profile.bestOverall ? `#${profile.bestOverall.standing.rank} — ${store.escapeHtml(getTournamentLabel(profile.bestOverall.tournament))}` : "—"}</p>
+            <p><strong># Distinct games played:</strong> ${profile.distinctGames}</p>
+          </div>
+          <p class="small subtle">Champion/podium counts use official tournament results when present, otherwise computed standings.</p>
+        `;
+
+        byYearBody.innerHTML = "";
+        if (!profile.yearly.length) {
+          byYearBody.innerHTML = '<tr><td colspan="5" class="subtle">No tournament participation found.</td></tr>';
+        } else {
+          profile.yearly.forEach((row) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${store.escapeHtml(row.tournament?.name || "Unknown")}</td>
+              <td>${store.escapeHtml(formatDate(row.tournament?.startDate))}</td>
+              <td>${row.standing ? `#${row.standing.rank}` : "—"}</td>
+              <td>${row.standing ? store.escapeHtml(scoreFormatter.format(row.standing.points)) : "—"}</td>
+              <td>${row.gamesPlayed}</td>
+            `;
+            byYearBody.appendChild(tr);
+          });
+        }
+
+        byGameGrid.innerHTML = "";
+        if (!profile.byGame.length) {
+          byGameGrid.innerHTML = '<p class="subtle">No game history found.</p>';
+          return;
+        }
+
+        profile.byGame.forEach((row) => {
+          const card = document.createElement("article");
+          card.className = "record-card";
+          const logoHtml = row.logoUrl
+            ? `<img class="record-logo" src="${store.escapeHtml(row.logoUrl)}" alt="${store.escapeHtml(row.gameName)} logo" loading="lazy" />`
+            : `<div class="record-logo record-logo-placeholder" aria-label="No logo available">${store.escapeHtml(store.getGameInitials(row.gameName))}</div>`;
+
+          card.innerHTML = `
+            <div class="record-logo-wrap">${logoHtml}</div>
+            <h3>${store.escapeHtml(row.gameName)}</h3>
+            <p><strong>Best score:</strong> ${store.escapeHtml(scoreFormatter.format(row.bestScore))}</p>
+            <p><strong>Best tournament:</strong> ${store.escapeHtml(getTournamentLabel(row.bestTournament))}</p>
+            <p><strong>Game podiums:</strong> ${row.podiumCount}</p>
+          `;
+          byGameGrid.appendChild(card);
+        });
+      }
+
+      (async () => {
+        await store.initializeStore();
+        const state = await store.loadState({ includeAllTournaments: true });
+        const connection = store.getConnectionStatus();
+        if (!connection.available) {
+          document.getElementById("profileOverview").innerHTML = `<p>${store.escapeHtml(connection.message)}</p>`;
+          return;
+        }
+
+        const playerSelect = document.getElementById("playerSelect");
+        const scopeInputs = [...document.querySelectorAll('input[name="playerScope"]')];
+
+        let selectedPlayerId = getQuerySelection(state);
+
+        function populateOptions() {
+          const repeatOnly = scopeInputs.find((input) => input.checked)?.value === "repeat";
+          const options = store.getProfilePlayerOptions(state, { repeatOnly });
+          const validIds = new Set(options.map((row) => String(row.playerId)));
+          if (selectedPlayerId && !validIds.has(String(selectedPlayerId))) {
+            selectedPlayerId = "";
+          }
+
+          playerSelect.innerHTML = '<option value="">Select a player…</option>';
+          options.forEach((row) => {
+            const option = document.createElement("option");
+            option.value = row.playerId;
+            option.textContent = `${row.playerName} (${row.tournamentCount})`;
+            if (String(row.playerId) === String(selectedPlayerId)) option.selected = true;
+            playerSelect.appendChild(option);
+          });
+
+          renderProfile(selectedPlayerId ? buildProfile(state, selectedPlayerId) : null);
+        }
+
+        playerSelect.addEventListener("change", () => {
+          selectedPlayerId = playerSelect.value;
+          renderProfile(selectedPlayerId ? buildProfile(state, selectedPlayerId) : null);
+        });
+
+        scopeInputs.forEach((input) => input.addEventListener("change", populateOptions));
+
+        populateOptions();
+      })();
+    </script>
+  </body>
+</html>
