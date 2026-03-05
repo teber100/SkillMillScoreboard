@@ -108,7 +108,7 @@
 
         <section class="card">
           <h2>Official Results (Legacy Winners)</h2>
-          <p class="small subtle">Store official 1st/2nd/3rd winners for legacy years with alternate scoring.</p>
+          <p class="small subtle">Store official winners for legacy years with alternate scoring. Tournament + 1st are required; 2nd/3rd are optional.</p>
           <div class="grid">
             <div>
               <label for="officialTournamentSelect">Tournament</label>
@@ -235,7 +235,7 @@
           officialSecondSelect.value = podium.places?.[2]?.playerId || "";
           officialThirdSelect.value = podium.places?.[3]?.playerId || "";
           officialNotesInput.value = podium.notes || "";
-          officialPodiumStatus.textContent = "Loaded saved official podium.";
+          officialPodiumStatus.textContent = "Loaded saved official results.";
           officialPodiumStatus.className = "status";
         } catch (error) {
           officialPodiumStatus.textContent = error?.message || "Could not load official podium.";
@@ -246,7 +246,7 @@
       function validatePodiumSelection() {
         const selected = [officialFirstSelect.value, officialSecondSelect.value, officialThirdSelect.value].filter(Boolean);
         if (new Set(selected).size !== selected.length) {
-          officialPodiumStatus.textContent = "Choose different players for 1st, 2nd, and 3rd.";
+          officialPodiumStatus.textContent = "Choose different players for each filled place.";
           officialPodiumStatus.className = "status warn";
           return false;
         }
@@ -513,8 +513,8 @@
       document.getElementById("saveOfficialPodiumBtn").addEventListener("click", async () => {
         if (!validatePodiumSelection()) return;
         const tournamentId = officialTournamentSelect.value;
-        if (!tournamentId || !officialFirstSelect.value || !officialSecondSelect.value || !officialThirdSelect.value) {
-          officialPodiumStatus.textContent = "Tournament and all podium places are required.";
+        if (!tournamentId || !officialFirstSelect.value) {
+          officialPodiumStatus.textContent = "Tournament and Champion (1st place) are required.";
           officialPodiumStatus.className = "status warn";
           return;
         }
@@ -528,7 +528,7 @@
             },
             officialNotesInput.value
           );
-          officialPodiumStatus.textContent = "Official podium saved.";
+          officialPodiumStatus.textContent = "Official results saved.";
           officialPodiumStatus.className = "status ok";
         } catch (error) {
           officialPodiumStatus.textContent = error?.message || "Could not save official podium.";
@@ -546,7 +546,7 @@
           officialSecondSelect.value = "";
           officialThirdSelect.value = "";
           officialNotesInput.value = "";
-          officialPodiumStatus.textContent = "Official podium cleared.";
+          officialPodiumStatus.textContent = "Official results cleared.";
           officialPodiumStatus.className = "status ok";
         } catch (error) {
           officialPodiumStatus.textContent = error?.message || "Could not clear official podium.";

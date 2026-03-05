@@ -7,7 +7,7 @@ A simple static website for running an arcade tournament with shared data across
 - One shared URL/QR code for everyone.
 - Multiple tournaments (years) with exactly one active tournament at a time.
 - Games and scores are isolated per tournament, while players remain global.
-- Optional official tournament podiums (1st/2nd/3rd) for legacy years where scoring rules differed.
+- Optional official tournament results (1st required, 2nd/3rd optional) for legacy years where scoring rules differed.
 - Players submit scores by selecting:
   - player name (from dropdown)
   - game (from dropdown)
@@ -198,12 +198,14 @@ Use this when a historical tournament used legacy/team scoring rules and compute
 2. Open `/admin.html` and unlock admin tools.
 3. In **Official Results (Legacy Winners)**:
    - Select the tournament.
-   - Choose Champion (1st), 2nd place, and 3rd place.
+   - Choose Champion (1st).
+   - Optionally choose 2nd place and/or 3rd place (leave blank to clear previously saved values).
    - Optionally add notes describing the legacy scoring context.
    - Click **Save Official Podium**.
 4. To remove legacy overrides for a tournament, click **Clear Official Podium**.
 
 How Hall of Champions decides what to show:
-- If all 3 `tournament_results` places exist for a tournament, Hall displays those winners with **Official (legacy scoring)**.
-- If official rows do not exist, Hall computes winners from standard points and labels it **Computed (standard scoring)**.
+- If official results exist and all 3 places are saved, Hall displays them with **Official (legacy scoring)**.
+- If official results exist but one or more places are missing, Hall displays available placements, shows `—` for missing ones, and labels the row **Official (partial)**.
+- If no official rows exist, Hall computes winners from standard points and labels it **Computed (standard scoring)**.
 - All-time game records continue to use raw score submissions only.
