@@ -590,8 +590,14 @@ async function upsertOfficialPodium(tournamentId, podium, notes) {
   if (!tournamentId) throw new Error("Tournament is required.");
 
   const placements = [1, 2, 3];
+  const parsePodiumPlayerId = (rawValue) => {
+    if (rawValue == null) return NaN;
+    const trimmed = String(rawValue).trim();
+    if (!trimmed) return NaN;
+    return Number(trimmed);
+  };
   const parsedPodium = Object.fromEntries(
-    placements.map((place) => [place, Number(podium?.[place])])
+    placements.map((place) => [place, parsePodiumPlayerId(podium?.[place])])
   );
   const normalizedNotes = notes ? String(notes).trim() : null;
 
