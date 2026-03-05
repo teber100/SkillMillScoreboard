@@ -82,6 +82,10 @@
         });
       }
 
+      function byStandingsOrder(a, b) {
+        return b.points - a.points || String(a.player).localeCompare(String(b.player));
+      }
+
       function placementText(rankedRows, placement) {
         const names = rankedRows.filter((row) => row.rank === placement).map((row) => row.player);
         if (!names.length) return "—";
@@ -132,7 +136,8 @@
 
         tournaments.forEach((tournament) => {
           const standings = store.getOverallStandingsForTournament(state, tournament.id);
-          const rankedRows = getRankedOverallRows(standings);
+          const sortedStandings = [...standings].sort(byStandingsOrder);
+          const rankedRows = getRankedOverallRows(sortedStandings);
 
           rankedRows.filter((row) => row.rank === 1).forEach((row) => {
             championshipCounts.set(row.player, (championshipCounts.get(row.player) || 0) + 1);
