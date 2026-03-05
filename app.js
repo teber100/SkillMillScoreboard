@@ -48,6 +48,15 @@ const connectionStatus = {
 let localStateCache = null;
 let supabaseClient = null;
 let initPromise = null;
+let hallAllTournamentsStatePromise = null;
+let hallAllTournamentsStateCache = null;
+
+const HALL_SCORES_PAGE_SIZE = 1000;
+
+function clearHallAllTournamentsCache() {
+  hallAllTournamentsStatePromise = null;
+  hallAllTournamentsStateCache = null;
+}
 
 function normalizeName(name) {
   return String(name || "").trim();
@@ -366,6 +375,58 @@ async function loadState(options = {}) {
     };
   }
 
+  if (includeAllTournaments) {
+    if (hallAllTournamentsStateCache) {
+      return structuredClone(hallAllTournamentsStateCache);
+    }
+
+    if (!hallAllTournamentsStatePromise) {
+      hallAllTournamentsStatePromise = loadSupabaseState({ includeAllTournaments, prefs })
+        .then((state) => {
+          hallAllTournamentsStateCache = state;
+          return state;
+        })
+        .catch((error) => {
+          clearHallAllTournamentsCache();
+          throw error;
+        })
+        .finally(() => {
+          hallAllTournamentsStatePromise = null;
+        });
+    }
+
+    return structuredClone(await hallAllTournamentsStatePromise);
+  }
+
+  return loadSupabaseState({ includeAllTournaments, prefs });
+}
+
+async function fetchAllScoresForHall() {
+  const allScores = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + HALL_SCORES_PAGE_SIZE - 1;
+    const scoresResp = await supabaseClient
+      .from("scores")
+      .select("id,tournament_id,game_id,score_value,submitted_by_admin,created_at,player:players(id,name)")
+      .order("created_at", { ascending: true })
+      .range(from, to);
+
+    if (scoresResp.error) throw scoresResp.error;
+
+    const batch = scoresResp.data || [];
+    allScores.push(...batch);
+
+    if (batch.length < HALL_SCORES_PAGE_SIZE) break;
+    from += HALL_SCORES_PAGE_SIZE;
+  }
+
+  return allScores;
+}
+
+async function loadSupabaseState({ includeAllTournaments, prefs }) {
+
   const [playersResp, tournamentsResp] = await Promise.all([
     supabaseClient.from("players").select("id,name").order("name", { ascending: true }),
     supabaseClient.from("tournaments").select("id,name,start_date,status,created_at").order("created_at", { ascending: false }),
@@ -410,21 +471,19 @@ async function loadState(options = {}) {
     gamesQuery.eq("tournament_id", tournamentScopeId);
   }
 
-  const scoresQuery = supabaseClient
-    .from("scores")
-    .select("id,tournament_id,game_id,score_value,submitted_by_admin,created_at,player:players(id,name)")
-    .order("created_at", { ascending: true });
-  if (tournamentScopeId) {
-    scoresQuery.eq("tournament_id", tournamentScopeId);
-  }
-
-  const [gamesResp, scoresResp] = await Promise.all([
+  const [gamesResp, scoresData] = await Promise.all([
     gamesQuery,
-    scoresQuery,
+    includeAllTournaments
+      ? fetchAllScoresForHall()
+      : supabaseClient
+          .from("scores")
+          .select("id,tournament_id,game_id,score_value,submitted_by_admin,created_at,player:players(id,name)")
+          .order("created_at", { ascending: true })
+          .eq("tournament_id", tournamentScopeId),
   ]);
 
-  if (gamesResp.error || scoresResp.error) {
-    throw gamesResp.error || scoresResp.error;
+  if (gamesResp.error) {
+    throw gamesResp.error;
   }
 
   const players = (playersResp.data || []).map((row) => ({ id: row.id, name: normalizeName(row.name) })).filter((p) => p.name);
@@ -446,7 +505,8 @@ async function loadState(options = {}) {
 
   const gameById = new Map(games.map((game) => [String(game.id), game]));
 
-  const submissions = (scoresResp.data || [])
+  const rawScores = includeAllTournaments ? scoresData : (scoresData.data || []);
+  const submissions = rawScores
     .map((row) => ({
       id: row.id,
       tournamentId: row.tournament_id,
@@ -529,6 +589,7 @@ async function createTournament({ name, startDate, cloneFromTournamentId }) {
     .select("id,name,start_date,status")
     .single();
   if (createError) throw createError;
+  clearHallAllTournamentsCache();
 
   if (cloneFromTournamentId) {
     const { data: sourceGames, error: sourceError } = await supabaseClient
@@ -596,7 +657,10 @@ async function setActiveTournament(tournamentId) {
   if (archiveError) throw archiveError;
 
   const { error: activeError } = await supabaseClient.from("tournaments").update({ status: "active" }).eq("id", tournamentId);
-  if (!activeError) return;
+  if (!activeError) {
+    clearHallAllTournamentsCache();
+    return;
+  }
 
   const previousActiveId = previouslyActive?.find((t) => String(t.id) !== String(tournamentId))?.id;
   if (previousActiveId) {
@@ -621,6 +685,7 @@ async function addPlayer(name) {
 
   const { error } = await supabaseClient.from("players").insert({ name: normalized });
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function updatePlayer(id, name) {
@@ -638,6 +703,7 @@ async function updatePlayer(id, name) {
 
   const { error } = await supabaseClient.from("players").update({ name: normalized }).eq("id", id);
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function deletePlayer(id) {
@@ -651,6 +717,7 @@ async function deletePlayer(id) {
 
   const { error } = await supabaseClient.from("players").delete().eq("id", id);
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function addGame(gameInput) {
@@ -693,6 +760,7 @@ async function addGame(gameInput) {
     is_active: true,
   });
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function updateGame(id, gameInput) {
@@ -727,6 +795,7 @@ async function updateGame(id, gameInput) {
     .eq("id", id)
     .eq("tournament_id", currentTournament.id);
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function deleteGame(id) {
@@ -750,6 +819,7 @@ async function deleteGame(id) {
     .eq("id", id)
     .eq("tournament_id", currentTournament.id);
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
@@ -806,6 +876,7 @@ async function submitScore({ playerId, gameId, score, submittedByAdmin }) {
     .select("id,tournament_id,score_value,submitted_by_admin,created_at,player:players(id,name),game:games(id,name)")
     .single();
   if (error) throw error;
+  clearHallAllTournamentsCache();
 
   return {
     id: data.id,
@@ -839,6 +910,7 @@ async function deleteSubmission(id) {
     .eq("id", id)
     .eq("tournament_id", currentTournament.id);
   if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 function getActiveGames(state) {
