@@ -58,6 +58,19 @@ create table if not exists public.scores (
   created_at timestamptz not null default now()
 );
 
+-- 5) Official tournament podium results (legacy winners)
+create table if not exists public.tournament_results (
+  id bigint generated always as identity primary key,
+  tournament_id bigint not null references public.tournaments(id) on delete cascade,
+  place integer not null,
+  player_id bigint not null references public.players(id) on delete cascade,
+  notes text null,
+  created_at timestamptz not null default now(),
+
+  constraint tournament_results_place_valid check (place in (1, 2, 3)),
+  constraint tournament_results_unique_place_per_tournament unique (tournament_id, place)
+);
+
 -- Helpful indexes
 create index if not exists idx_tournaments_status on public.tournaments (status);
 create index if not exists idx_games_tournament_active_sort on public.games (tournament_id, is_active, sort_order);
@@ -65,13 +78,14 @@ create index if not exists idx_games_tournament_name on public.games (tournament
 create index if not exists idx_scores_tournament_game_player_created on public.scores (tournament_id, game_id, player_id, created_at desc);
 create index if not exists idx_scores_tournament_player_game_created on public.scores (tournament_id, player_id, game_id, created_at desc);
 create index if not exists idx_scores_tournament_game_score on public.scores (tournament_id, game_id, score_value);
+create index if not exists idx_tournament_results_tournament_id on public.tournament_results (tournament_id);
 
 -- Ensure only one active tournament (partial unique index)
 create unique index if not exists idx_tournaments_single_active
   on public.tournaments ((status))
   where status = 'active';
 
--- 5) Auto-update updated_at on games
+-- 6) Auto-update updated_at on games
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -89,7 +103,7 @@ before update on public.games
 for each row
 execute function public.set_updated_at();
 
--- 6) Seed a default active tournament and games
+-- 7) Seed a default active tournament and games
 insert into public.tournaments (name, status)
 values ('Skill Mill 2026', 'active')
 on conflict (name) do nothing;
@@ -120,7 +134,7 @@ cross join (
 where t.name = 'Skill Mill 2026'
 on conflict (tournament_id, name) do nothing;
 
--- 7) Optional view for best score per player per game within each tournament
+-- 8) Optional view for best score per player per game within each tournament
 create or replace view public.best_scores as
 select
   s.tournament_id,

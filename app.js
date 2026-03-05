@@ -35,6 +35,7 @@ const defaultState = {
     isActive: true,
   })),
   submissions: [],
+  officialPodiums: {},
   adminCode: DEFAULT_ADMIN_CODE,
   overallRevealed: false,
 };
@@ -190,6 +191,7 @@ function readLegacyLocalState() {
       players,
       games,
       submissions,
+      officialPodiums: parsed.officialPodiums && typeof parsed.officialPodiums === "object" ? parsed.officialPodiums : {},
     };
   } catch {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultState));
@@ -229,6 +231,7 @@ function writeLegacyLocalState(state) {
       enteredBy: entry.enteredBy,
       createdAt: entry.createdAt,
     })),
+    officialPodiums: state.officialPodiums || {},
   };
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(compact));
 }
@@ -427,13 +430,17 @@ async function fetchAllScoresForHall() {
 
 async function loadSupabaseState({ includeAllTournaments, prefs }) {
 
-  const [playersResp, tournamentsResp] = await Promise.all([
+  const [playersResp, tournamentsResp, officialResultsResp] = await Promise.all([
     supabaseClient.from("players").select("id,name").order("name", { ascending: true }),
     supabaseClient.from("tournaments").select("id,name,start_date,status,created_at").order("created_at", { ascending: false }),
+    supabaseClient
+      .from("tournament_results")
+      .select("tournament_id,place,notes,player:players(id,name)")
+      .order("place", { ascending: true }),
   ]);
 
-  if (playersResp.error || tournamentsResp.error) {
-    throw playersResp.error || tournamentsResp.error;
+  if (playersResp.error || tournamentsResp.error || officialResultsResp.error) {
+    throw playersResp.error || tournamentsResp.error || officialResultsResp.error;
   }
 
   const tournaments = (tournamentsResp.data || [])
@@ -447,6 +454,20 @@ async function loadSupabaseState({ includeAllTournaments, prefs }) {
     .filter((t) => t.name);
 
   const activeTournament = tournaments.find((t) => t.status === "active") || null;
+  const officialPodiums = {};
+  (officialResultsResp.data || []).forEach((row) => {
+    const tournamentId = String(row.tournament_id);
+    if (!officialPodiums[tournamentId]) {
+      officialPodiums[tournamentId] = { notes: row.notes || null, places: {} };
+    }
+    officialPodiums[tournamentId].places[row.place] = {
+      playerId: row.player?.id,
+      playerName: normalizeName(row.player?.name),
+    };
+    if (!officialPodiums[tournamentId].notes && row.notes) {
+      officialPodiums[tournamentId].notes = row.notes;
+    }
+  });
 
   if (!activeTournament && !includeAllTournaments) {
     return {
@@ -455,6 +476,7 @@ async function loadSupabaseState({ includeAllTournaments, prefs }) {
       players: (playersResp.data || []).map((row) => ({ id: row.id, name: normalizeName(row.name) })).filter((p) => p.name),
       games: [],
       submissions: [],
+      officialPodiums,
       adminCode: prefs.adminCode,
       overallRevealed: prefs.overallRevealed,
     };
@@ -526,9 +548,101 @@ async function loadSupabaseState({ includeAllTournaments, prefs }) {
     players,
     games,
     submissions,
+    officialPodiums,
     adminCode: prefs.adminCode,
     overallRevealed: prefs.overallRevealed,
   };
+}
+
+function normalizeOfficialPodiumRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const places = {};
+  let notes = null;
+  rows.forEach((row) => {
+    places[row.place] = {
+      playerId: row.player?.id,
+      playerName: normalizeName(row.player?.name),
+    };
+    if (!notes && row.notes) notes = row.notes;
+  });
+  if (!places[1] || !places[2] || !places[3]) return null;
+  return { notes, places };
+}
+
+async function fetchOfficialPodium(tournamentId) {
+  if (!tournamentId) throw new Error("Tournament is required.");
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState();
+    return state.officialPodiums?.[String(tournamentId)] || null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("tournament_results")
+    .select("tournament_id,place,notes,player:players(id,name)")
+    .eq("tournament_id", tournamentId)
+    .order("place", { ascending: true });
+
+  if (error) throw error;
+  return normalizeOfficialPodiumRows(data || []);
+}
+
+async function upsertOfficialPodium(tournamentId, podium, notes) {
+  if (!tournamentId) throw new Error("Tournament is required.");
+  const first = Number(podium?.[1]);
+  const second = Number(podium?.[2]);
+  const third = Number(podium?.[3]);
+  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(third)) {
+    throw new Error("All 3 podium places are required.");
+  }
+
+  const ids = [first, second, third].map((id) => String(id));
+  if (new Set(ids).size !== 3) throw new Error("Each podium place must have a different player.");
+
+  const payload = [1, 2, 3].map((place) => ({
+    tournament_id: tournamentId,
+    place,
+    player_id: Number(podium[place]),
+    notes: notes ? String(notes).trim() : null,
+  }));
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState();
+    const playerById = new Map((state.players || []).map((player) => [String(player.id), player]));
+    state.officialPodiums = state.officialPodiums || {};
+    state.officialPodiums[String(tournamentId)] = {
+      notes: notes ? String(notes).trim() : null,
+      places: {
+        1: { playerId: first, playerName: playerById.get(String(first))?.name || "Unknown" },
+        2: { playerId: second, playerName: playerById.get(String(second))?.name || "Unknown" },
+        3: { playerId: third, playerName: playerById.get(String(third))?.name || "Unknown" },
+      },
+    };
+    await saveState(state);
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from("tournament_results")
+    .upsert(payload, { onConflict: "tournament_id,place" });
+  if (error) throw error;
+  clearHallAllTournamentsCache();
+}
+
+async function clearOfficialPodium(tournamentId) {
+  if (!tournamentId) throw new Error("Tournament is required.");
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState();
+    state.officialPodiums = state.officialPodiums || {};
+    delete state.officialPodiums[String(tournamentId)];
+    await saveState(state);
+    return;
+  }
+
+  const { error } = await supabaseClient.from("tournament_results").delete().eq("tournament_id", tournamentId);
+  if (error) throw error;
+  clearHallAllTournamentsCache();
 }
 
 async function saveState(state) {
@@ -1124,4 +1238,7 @@ window.TournamentStore = {
   deleteGame,
   submitScore,
   deleteSubmission,
+  fetchOfficialPodium,
+  upsertOfficialPodium,
+  clearOfficialPodium,
 };

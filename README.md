@@ -7,6 +7,7 @@ A simple static website for running an arcade tournament with shared data across
 - One shared URL/QR code for everyone.
 - Multiple tournaments (years) with exactly one active tournament at a time.
 - Games and scores are isolated per tournament, while players remain global.
+- Optional official tournament podiums (1st/2nd/3rd) for legacy years where scoring rules differed.
 - Players submit scores by selecting:
   - player name (from dropdown)
   - game (from dropdown)
@@ -91,6 +92,8 @@ For a brand new project, this creates `players`, `tournaments`, `games`, and `sc
 
 For an existing project already in production, run `supabase-migration-tournaments.sql` first to backfill all existing games/scores into the default tournament.
 
+Then run `supabase-migration-official-results.sql` once to add the `tournament_results` table for legacy official podium entries.
+
 ### 3) Get your Supabase project keys
 
 In Supabase project settings, copy:
@@ -132,6 +135,7 @@ In Supabase project settings, copy:
 - `/hall.html` — historical champions and all-time records by game.
 - `/tv.html` — TV-friendly top-3 per game.
 - `/admin.html` — manage players/games and admin score entry.
+- `/admin.html` — also includes **Official Results (Legacy Winners)** for saving official podiums per tournament.
 - `/results.html` — admin reveal/hide control for overall standings.
 
 ---
@@ -183,3 +187,23 @@ How current tournament is determined:
 - The app reads `tournaments` and selects the single row where `status = 'active'`.
 - Submit/TV/leaderboards/results/admin game management all scope queries to that active tournament.
 - Players remain global and are shared across all tournaments.
+
+---
+
+## Legacy official winners (2016–2021 support)
+
+Use this when a historical tournament used legacy/team scoring rules and computed standings should not be treated as final winners.
+
+1. Run `supabase-migration-official-results.sql` once in Supabase SQL Editor.
+2. Open `/admin.html` and unlock admin tools.
+3. In **Official Results (Legacy Winners)**:
+   - Select the tournament.
+   - Choose Champion (1st), 2nd place, and 3rd place.
+   - Optionally add notes describing the legacy scoring context.
+   - Click **Save Official Podium**.
+4. To remove legacy overrides for a tournament, click **Clear Official Podium**.
+
+How Hall of Champions decides what to show:
+- If all 3 `tournament_results` places exist for a tournament, Hall displays those winners with **Official (legacy scoring)**.
+- If official rows do not exist, Hall computes winners from standard points and labels it **Computed (standard scoring)**.
+- All-time game records continue to use raw score submissions only.
