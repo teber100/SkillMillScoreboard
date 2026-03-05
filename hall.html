@@ -143,7 +143,12 @@
 
         tournaments.forEach((tournament) => {
           const officialPodium = state.officialPodiums?.[String(tournament.id)] || null;
-          const hasOfficialPodium = Boolean(
+          const hasAnyOfficialResults = Boolean(
+            officialPodium?.places?.[1]?.playerName ||
+            officialPodium?.places?.[2]?.playerName ||
+            officialPodium?.places?.[3]?.playerName
+          );
+          const hasCompleteOfficialPodium = Boolean(
             officialPodium?.places?.[1]?.playerName &&
             officialPodium?.places?.[2]?.playerName &&
             officialPodium?.places?.[3]?.playerName
@@ -155,16 +160,16 @@
           let sourceLabel = "Computed (standard scoring)";
           let sourceNotes = "";
 
-          if (hasOfficialPodium) {
+          if (hasAnyOfficialResults) {
             firstPlace = placementFromOfficial(officialPodium, 1);
             secondPlace = placementFromOfficial(officialPodium, 2);
             thirdPlace = placementFromOfficial(officialPodium, 3);
-            sourceLabel = "Official (legacy scoring)";
+            sourceLabel = hasCompleteOfficialPodium ? "Official (legacy scoring)" : "Official (partial)";
             sourceNotes = officialPodium.notes || "";
-            [firstPlace].forEach((name) => {
+            [firstPlace].filter((name) => name !== "—").forEach((name) => {
               championshipCounts.set(name, (championshipCounts.get(name) || 0) + 1);
             });
-            [firstPlace, secondPlace, thirdPlace].forEach((name) => {
+            [firstPlace, secondPlace, thirdPlace].filter((name) => name !== "—").forEach((name) => {
               podiumCounts.set(name, (podiumCounts.get(name) || 0) + 1);
             });
           } else {
@@ -188,7 +193,7 @@
             <td>${store.escapeHtml(tournament.name)}</td>
             <td>${store.escapeHtml(formatDate(tournament.startDate))}</td>
             <td>
-              <span class="results-source-badge ${hasOfficialPodium ? "official" : "computed"}">${store.escapeHtml(sourceLabel)}</span>
+              <span class="results-source-badge ${hasAnyOfficialResults ? "official" : "computed"}">${store.escapeHtml(sourceLabel)}</span>
               ${sourceNotes ? `<div class="small subtle">${store.escapeHtml(sourceNotes)}</div>` : ""}
             </td>
             <td>${store.escapeHtml(firstPlace)}</td>
