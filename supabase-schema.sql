@@ -71,6 +71,21 @@ create table if not exists public.tournament_results (
   constraint tournament_results_unique_place_per_tournament unique (tournament_id, place)
 );
 
+-- 6) Official tournament full standings (legacy display-only)
+create table if not exists public.tournament_standings (
+  id bigint generated always as identity primary key,
+  tournament_id bigint not null references public.tournaments(id) on delete cascade,
+  player_id bigint not null references public.players(id) on delete cascade,
+  rank integer not null,
+  total_points numeric null,
+  notes text null,
+  created_at timestamptz not null default now(),
+
+  constraint tournament_standings_rank_positive check (rank > 0),
+  constraint tournament_standings_unique_player_per_tournament unique (tournament_id, player_id),
+  constraint tournament_standings_unique_rank_per_tournament unique (tournament_id, rank)
+);
+
 -- Helpful indexes
 create index if not exists idx_tournaments_status on public.tournaments (status);
 create index if not exists idx_games_tournament_active_sort on public.games (tournament_id, is_active, sort_order);
@@ -79,13 +94,14 @@ create index if not exists idx_scores_tournament_game_player_created on public.s
 create index if not exists idx_scores_tournament_player_game_created on public.scores (tournament_id, player_id, game_id, created_at desc);
 create index if not exists idx_scores_tournament_game_score on public.scores (tournament_id, game_id, score_value);
 create index if not exists idx_tournament_results_tournament_id on public.tournament_results (tournament_id);
+create index if not exists idx_tournament_standings_tournament_rank on public.tournament_standings (tournament_id, rank);
 
 -- Ensure only one active tournament (partial unique index)
 create unique index if not exists idx_tournaments_single_active
   on public.tournaments ((status))
   where status = 'active';
 
--- 6) Auto-update updated_at on games
+-- 7) Auto-update updated_at on games
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -103,7 +119,7 @@ before update on public.games
 for each row
 execute function public.set_updated_at();
 
--- 7) Seed a default active tournament and games
+-- 8) Seed a default active tournament and games
 insert into public.tournaments (name, status)
 values ('Skill Mill 2026', 'active')
 on conflict (name) do nothing;

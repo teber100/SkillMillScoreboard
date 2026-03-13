@@ -105,6 +105,11 @@
         return playerProfileLink(podium?.places?.[placement]?.playerName || "—");
       }
 
+      function placementFromOfficialStandings(officialStandings, placement) {
+        const row = (officialStandings || []).find((entry) => Number(entry.rank) === placement);
+        return playerProfileLink(row?.playerName || "—");
+      }
+
       function formatDate(dateString) {
         if (!dateString) return "—";
         const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
@@ -149,30 +154,44 @@
         const podiumCounts = new Map();
 
         tournaments.forEach((tournament) => {
+          const officialStandings = store.getOfficialStandingsForTournamentFromState(state, tournament.id);
           const officialPodium = state.officialPodiums?.[String(tournament.id)] || null;
+          const hasOfficialStandings = officialStandings.length > 0;
           const hasAnyOfficialResults = Boolean(
             officialPodium?.places?.[1]?.playerName ||
             officialPodium?.places?.[2]?.playerName ||
-            officialPodium?.places?.[3]?.playerName
-          );
-          const hasCompleteOfficialPodium = Boolean(
-            officialPodium?.places?.[1]?.playerName &&
-            officialPodium?.places?.[2]?.playerName &&
             officialPodium?.places?.[3]?.playerName
           );
 
           let firstPlace = "—";
           let secondPlace = "—";
           let thirdPlace = "—";
-          let sourceLabel = "Computed (standard scoring)";
+          let sourceLabel = "Computed";
           let sourceNotes = "";
+          let sourceBadgeClass = "computed";
 
-          if (hasAnyOfficialResults) {
+          if (hasOfficialStandings) {
+            firstPlace = placementFromOfficialStandings(officialStandings, 1);
+            secondPlace = placementFromOfficialStandings(officialStandings, 2);
+            thirdPlace = placementFromOfficialStandings(officialStandings, 3);
+            sourceLabel = "Official standings";
+            sourceNotes = officialStandings.find((row) => row.notes)?.notes || "";
+            sourceBadgeClass = "official";
+            officialStandings.filter((row) => row.rank === 1).forEach((row) => {
+              const name = store.normalizeName(row.playerName);
+              if (name) championshipCounts.set(name, (championshipCounts.get(name) || 0) + 1);
+            });
+            officialStandings.filter((row) => row.rank <= 3).forEach((row) => {
+              const name = store.normalizeName(row.playerName);
+              if (name) podiumCounts.set(name, (podiumCounts.get(name) || 0) + 1);
+            });
+          } else if (hasAnyOfficialResults) {
             firstPlace = placementFromOfficial(officialPodium, 1);
             secondPlace = placementFromOfficial(officialPodium, 2);
             thirdPlace = placementFromOfficial(officialPodium, 3);
-            sourceLabel = hasCompleteOfficialPodium ? "Official (legacy scoring)" : "Official (partial)";
+            sourceLabel = "Official podium";
             sourceNotes = officialPodium.notes || "";
+            sourceBadgeClass = "official";
             const officialNames = [1, 2, 3]
               .map((place) => officialPodium?.places?.[place]?.playerName)
               .map((name) => store.normalizeName(name))
@@ -203,7 +222,7 @@
             <td>${store.escapeHtml(tournament.name)}</td>
             <td>${store.escapeHtml(formatDate(tournament.startDate))}</td>
             <td>
-              <span class="results-source-badge ${hasAnyOfficialResults ? "official" : "computed"}">${store.escapeHtml(sourceLabel)}</span>
+              <span class="results-source-badge ${sourceBadgeClass}">${store.escapeHtml(sourceLabel)}</span>
               ${sourceNotes ? `<div class="small subtle">${store.escapeHtml(sourceNotes)}</div>` : ""}
             </td>
             <td>${firstPlace}</td>

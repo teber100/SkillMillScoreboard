@@ -88,11 +88,11 @@ To change it, open `app.js` and edit `DEFAULT_ADMIN_CODE`.
 3. Copy/paste the SQL into Supabase SQL Editor.
 4. Run it once.
 
-For a brand new project, this creates `players`, `tournaments`, `games`, and `scores` (plus optional `best_scores` view).
+For a brand new project, this creates `players`, `tournaments`, `games`, `scores`, `tournament_results`, and `tournament_standings` (plus optional `best_scores` view).
 
 For an existing project already in production, run `supabase-migration-tournaments.sql` first to backfill all existing games/scores into the default tournament.
 
-Then run `supabase-migration-official-results.sql` once to add the `tournament_results` table for legacy official podium entries.
+Then run `supabase-migration-official-results.sql` once to add the `tournament_results` table for legacy official podium entries, and `supabase-migration-tournament-standings.sql` once to add full official legacy standings support.
 
 ### 3) Get your Supabase project keys
 
@@ -190,22 +190,93 @@ How current tournament is determined:
 
 ---
 
-## Legacy official winners (2016–2021 support)
+## Legacy official standings import (2016–2021 support)
 
-Use this when a historical tournament used legacy/team scoring rules and computed standings should not be treated as final winners.
+Use this when historical tournaments used legacy/team scoring rules and computed standings should not be treated as final placements.
 
-1. Run `supabase-migration-official-results.sql` once in Supabase SQL Editor.
-2. Open `/admin.html` and unlock admin tools.
-3. In **Official Results (Legacy Winners)**:
-   - Select the tournament.
-   - Choose Champion (1st).
-   - Optionally choose 2nd place and/or 3rd place (leave blank to clear previously saved values).
-   - Optionally add notes describing the legacy scoring context.
-   - Click **Save Official Podium**.
-4. To remove legacy overrides for a tournament, click **Clear Official Podium**.
+### 1) Run migrations once
 
-How Hall of Champions decides what to show:
-- If official results exist and all 3 places are saved, Hall displays them with **Official (legacy scoring)**.
-- If official results exist but one or more places are missing, Hall displays available placements, shows `—` for missing ones, and labels the row **Official (partial)**.
-- If no official rows exist, Hall computes winners from standard points and labels it **Computed (standard scoring)**.
-- All-time game records continue to use raw score submissions only.
+- `supabase-migration-official-results.sql` (optional official podium fallback support)
+- `supabase-migration-tournament-standings.sql` (official full rank list + optional legacy points)
+
+### 2) Prepare CSV and stage rows
+
+CSV columns:
+- `tournament_name`
+- `player_name`
+- `rank`
+- `total_points` (optional; may be blank/null)
+
+Example CSV:
+
+```csv
+tournament_name,player_name,rank,total_points
+Skill Mill 2019,Alex,1,116
+Skill Mill 2019,Jamie,2,104
+Skill Mill 2019,Riley,3,99
+Skill Mill 2019,Taylor,4,
+```
+
+Create staging table and load CSV (via Supabase table editor import or `COPY`):
+
+```sql
+create table if not exists public.legacy_standings_staging (
+  tournament_name text not null,
+  player_name text not null,
+  rank integer not null,
+  total_points numeric null
+);
+```
+
+### 3) Promote staged data into official standings
+
+```sql
+begin;
+
+-- 1) ensure tournaments exist (legacy imports are archived by default)
+insert into public.tournaments (name, status)
+select distinct trim(s.tournament_name), 'archived'
+from public.legacy_standings_staging s
+where length(trim(s.tournament_name)) > 0
+on conflict (name) do nothing;
+
+-- 2) ensure players exist
+insert into public.players (name)
+select distinct trim(s.player_name)
+from public.legacy_standings_staging s
+where length(trim(s.player_name)) > 0
+on conflict (name) do nothing;
+
+-- 3) upsert official standings rows (rank + optional legacy total_points)
+insert into public.tournament_standings (tournament_id, player_id, rank, total_points)
+select
+  t.id as tournament_id,
+  p.id as player_id,
+  s.rank,
+  s.total_points
+from public.legacy_standings_staging s
+join public.tournaments t on lower(t.name) = lower(trim(s.tournament_name))
+join public.players p on lower(p.name) = lower(trim(s.player_name))
+where s.rank > 0
+on conflict (tournament_id, player_id)
+do update set
+  rank = excluded.rank,
+  total_points = excluded.total_points;
+
+commit;
+```
+
+### Source precedence used by the app
+
+1. `tournament_standings` (official standings)
+2. `tournament_results` (official podium)
+3. computed standings from submitted scores
+
+### Legacy points labeling
+
+- Legacy `total_points` are display-only and are **not** used to compute modern standings.
+- In player profiles, legacy rows display an “Official standings (legacy)” badge.
+- If legacy `total_points` is missing, the UI shows `—`.
+- Legacy points include a note that they are from that year’s rules and are not directly comparable across years.
+
+All-time game records remain based on raw score submissions only.

@@ -114,15 +114,23 @@
         const tournamentsById = new Map((state.tournaments || []).map((t) => [String(t.id), t]));
         const standingsCache = store.createTournamentStandingsCache(state);
         const submissions = (state.submissions || []).filter((entry) => String(entry.playerId) === String(player.id));
-        const participatedTournamentIds = [...new Set(submissions.map((entry) => String(entry.tournamentId)).filter(Boolean))];
+        const legacyTournamentIds = Object.entries(state.officialStandings || {})
+          .filter(([, rows]) => (rows || []).some((row) => String(row.playerId) === String(player.id)))
+          .map(([tournamentId]) => String(tournamentId));
+        const participatedTournamentIds = [
+          ...new Set([...submissions.map((entry) => String(entry.tournamentId)).filter(Boolean), ...legacyTournamentIds]),
+        ];
 
         const yearly = participatedTournamentIds
           .map((tournamentId) => {
             const tournament = tournamentsById.get(String(tournamentId)) || null;
             const standings = standingsCache.get(tournamentId);
-            const playerStanding = standings.find(
+            const computedStanding = standings.find(
               (row) => store.normalizeName(row.player).toLowerCase() === store.normalizeName(player.name).toLowerCase()
             );
+            const officialStanding = store
+              .getOfficialStandingsForTournamentFromState(state, tournamentId)
+              .find((row) => String(row.playerId) === String(player.id));
             const bestByGame = store.getBestScoresByGameForTournament(state, tournamentId, { activeOnly: true });
             const gamesPlayed = Object.values(bestByGame).reduce(
               (count, ranked) => (ranked.some((entry) => String(entry.playerId) === String(player.id)) ? count + 1 : count),
@@ -133,7 +141,12 @@
               tournamentId,
               tournament,
               dateValue: store.getTournamentDateValue(tournament),
-              standing: playerStanding || null,
+              computedStanding: computedStanding || null,
+              officialStanding: officialStanding || null,
+              standing: officialStanding
+                ? { rank: officialStanding.rank, points: officialStanding.totalPoints }
+                : computedStanding || null,
+              standingSource: officialStanding ? "official-legacy" : "computed",
               gamesPlayed,
             };
           })
@@ -147,6 +160,13 @@
         let podiums = 0;
 
         yearly.forEach((row) => {
+          const officialStandingsRow = row.officialStanding;
+          if (officialStandingsRow) {
+            if (officialStandingsRow.rank === 1) championships += 1;
+            if (officialStandingsRow.rank <= 3) podiums += 1;
+            return;
+          }
+
           const official = state.officialPodiums?.[String(row.tournamentId)] || null;
           const officialPlaces = [1, 2, 3]
             .map((place) => official?.places?.[place]?.playerId)
@@ -262,7 +282,7 @@
             <p><strong>Best overall finish:</strong> ${profile.bestOverall ? `#${profile.bestOverall.standing.rank} — ${store.escapeHtml(getTournamentLabel(profile.bestOverall.tournament))}` : "—"}</p>
             <p><strong># Distinct games played:</strong> ${profile.distinctGames}</p>
           </div>
-          <p class="small subtle">Champion/podium counts use official tournament results when present, otherwise computed standings.</p>
+          <p class="small subtle">Champion/podium counts use official standings first, then official podiums, then computed standings.</p>
         `;
 
         byYearBody.innerHTML = "";
@@ -274,8 +294,16 @@
             tr.innerHTML = `
               <td>${store.escapeHtml(row.tournament?.name || "Unknown")}</td>
               <td>${store.escapeHtml(formatDate(row.tournament?.startDate))}</td>
-              <td>${row.standing ? `#${row.standing.rank}` : "—"}</td>
-              <td>${row.standing ? store.escapeHtml(scoreFormatter.format(row.standing.points)) : "—"}</td>
+              <td>${row.standing ? `#${row.standing.rank}` : "—"}
+                ${row.standingSource === "official-legacy" ? '<span class="results-source-badge official">Official standings (legacy)</span>' : ""}
+              </td>
+              <td>${row.standing
+                ? (row.standingSource === "official-legacy"
+                  ? (row.standing.points == null ? "—" : store.escapeHtml(scoreFormatter.format(row.standing.points)))
+                  : store.escapeHtml(scoreFormatter.format(row.standing.points)))
+                : "—"}
+                ${row.standingSource === "official-legacy" ? '<div class="small subtle">Legacy points are from that year\'s rules and aren\'t directly comparable across years.</div>' : ""}
+              </td>
               <td>${row.gamesPlayed}</td>
             `;
             byYearBody.appendChild(tr);
