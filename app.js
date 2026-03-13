@@ -36,6 +36,7 @@ const defaultState = {
   })),
   submissions: [],
   officialPodiums: {},
+  officialStandings: {},
   adminCode: DEFAULT_ADMIN_CODE,
   overallRevealed: false,
 };
@@ -192,6 +193,7 @@ function readLegacyLocalState() {
       games,
       submissions,
       officialPodiums: parsed.officialPodiums && typeof parsed.officialPodiums === "object" ? parsed.officialPodiums : {},
+      officialStandings: parsed.officialStandings && typeof parsed.officialStandings === "object" ? parsed.officialStandings : {},
     };
   } catch {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultState));
@@ -232,6 +234,7 @@ function writeLegacyLocalState(state) {
       createdAt: entry.createdAt,
     })),
     officialPodiums: state.officialPodiums || {},
+    officialStandings: state.officialStandings || {},
   };
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(compact));
 }
@@ -373,6 +376,8 @@ async function loadState(options = {}) {
       players: [],
       games: [],
       submissions: [],
+      officialPodiums: {},
+      officialStandings: {},
       adminCode: prefs.adminCode,
       overallRevealed: prefs.overallRevealed,
     };
@@ -430,17 +435,21 @@ async function fetchAllScoresForHall() {
 
 async function loadSupabaseState({ includeAllTournaments, prefs }) {
 
-  const [playersResp, tournamentsResp, officialResultsResp] = await Promise.all([
+  const [playersResp, tournamentsResp, officialResultsResp, officialStandingsResp] = await Promise.all([
     supabaseClient.from("players").select("id,name").order("name", { ascending: true }),
     supabaseClient.from("tournaments").select("id,name,start_date,status,created_at").order("created_at", { ascending: false }),
     supabaseClient
       .from("tournament_results")
       .select("tournament_id,place,notes,player:players(id,name)")
       .order("place", { ascending: true }),
+    supabaseClient
+      .from("tournament_standings")
+      .select("tournament_id,rank,total_points,notes,player:players(id,name)")
+      .order("rank", { ascending: true }),
   ]);
 
-  if (playersResp.error || tournamentsResp.error || officialResultsResp.error) {
-    throw playersResp.error || tournamentsResp.error || officialResultsResp.error;
+  if (playersResp.error || tournamentsResp.error || officialResultsResp.error || officialStandingsResp.error) {
+    throw playersResp.error || tournamentsResp.error || officialResultsResp.error || officialStandingsResp.error;
   }
 
   const tournaments = (tournamentsResp.data || [])
@@ -469,6 +478,19 @@ async function loadSupabaseState({ includeAllTournaments, prefs }) {
     }
   });
 
+  const officialStandings = {};
+  (officialStandingsResp.data || []).forEach((row) => {
+    const tournamentId = String(row.tournament_id);
+    if (!officialStandings[tournamentId]) officialStandings[tournamentId] = [];
+    officialStandings[tournamentId].push({
+      playerId: row.player?.id,
+      playerName: normalizeName(row.player?.name),
+      rank: Number(row.rank),
+      totalPoints: row.total_points == null ? null : Number(row.total_points),
+      notes: row.notes || null,
+    });
+  });
+
   if (!activeTournament && !includeAllTournaments) {
     return {
       tournaments,
@@ -477,6 +499,7 @@ async function loadSupabaseState({ includeAllTournaments, prefs }) {
       games: [],
       submissions: [],
       officialPodiums,
+      officialStandings,
       adminCode: prefs.adminCode,
       overallRevealed: prefs.overallRevealed,
     };
@@ -549,6 +572,7 @@ async function loadSupabaseState({ includeAllTournaments, prefs }) {
     games,
     submissions,
     officialPodiums,
+    officialStandings,
     adminCode: prefs.adminCode,
     overallRevealed: prefs.overallRevealed,
   };
@@ -566,6 +590,80 @@ function normalizeOfficialPodiumRows(rows) {
     if (!notes && row.notes) notes = row.notes;
   });
   return { notes, places };
+}
+
+function getOfficialStandingsForTournamentFromState(state, tournamentId) {
+  const rows = state?.officialStandings?.[String(tournamentId)];
+  if (!Array.isArray(rows)) return [];
+  return [...rows]
+    .filter((row) => Number.isFinite(Number(row?.rank)) && Number(row.rank) > 0)
+    .sort((a, b) => Number(a.rank) - Number(b.rank));
+}
+
+async function fetchTournamentStandings(tournamentId) {
+  if (!tournamentId) throw new Error("Tournament is required.");
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState({ includeAllTournaments: true });
+    return getOfficialStandingsForTournamentFromState(state, tournamentId);
+  }
+
+  const { data, error } = await supabaseClient
+    .from("tournament_standings")
+    .select("tournament_id,rank,total_points,notes,player:players(id,name)")
+    .eq("tournament_id", tournamentId)
+    .order("rank", { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    playerId: row.player?.id,
+    playerName: normalizeName(row.player?.name),
+    rank: Number(row.rank),
+    totalPoints: row.total_points == null ? null : Number(row.total_points),
+    notes: row.notes || null,
+  }));
+}
+
+async function fetchPlayerStandingForTournament(playerId, tournamentId) {
+  if (!playerId || !tournamentId) return null;
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState({ includeAllTournaments: true });
+    const match = getOfficialStandingsForTournamentFromState(state, tournamentId)
+      .find((row) => String(row.playerId) === String(playerId));
+    return match ? { rank: match.rank, totalPoints: match.totalPoints } : null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("tournament_standings")
+    .select("rank,total_points")
+    .eq("tournament_id", tournamentId)
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    rank: Number(data.rank),
+    totalPoints: data.total_points == null ? null : Number(data.total_points),
+  };
+}
+
+async function tournamentHasOfficialStandings(tournamentId) {
+  if (!tournamentId) return false;
+
+  if (connectionStatus.mode === "local") {
+    const state = await loadState({ includeAllTournaments: true });
+    return getOfficialStandingsForTournamentFromState(state, tournamentId).length > 0;
+  }
+
+  const { count, error } = await supabaseClient
+    .from("tournament_standings")
+    .select("id", { head: true, count: "exact" })
+    .eq("tournament_id", tournamentId);
+
+  if (error) throw error;
+  return Number(count || 0) > 0;
 }
 
 async function fetchOfficialPodium(tournamentId) {
@@ -1360,4 +1458,8 @@ window.TournamentStore = {
   fetchOfficialPodium,
   upsertOfficialPodium,
   clearOfficialPodium,
+  fetchTournamentStandings,
+  fetchPlayerStandingForTournament,
+  tournamentHasOfficialStandings,
+  getOfficialStandingsForTournamentFromState,
 };
