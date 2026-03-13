@@ -302,7 +302,6 @@
                   ? (row.standing.points == null ? "—" : store.escapeHtml(scoreFormatter.format(row.standing.points)))
                   : store.escapeHtml(scoreFormatter.format(row.standing.points)))
                 : "—"}
-                ${row.standingSource === "official-legacy" ? '<div class="small subtle">Legacy points are from that year\'s rules and aren\'t directly comparable across years.</div>' : ""}
               </td>
               <td>${row.gamesPlayed}</td>
             `;
