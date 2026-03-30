@@ -76,18 +76,6 @@
         return String(b.id).localeCompare(String(a.id), undefined, { numeric: true, sensitivity: "base" });
       }
 
-      function getRankedOverallRows(overallRows) {
-        let rank = 1;
-        return overallRows.map((row, idx) => {
-          if (idx > 0 && row.points !== overallRows[idx - 1].points) rank = idx + 1;
-          return { ...row, rank };
-        });
-      }
-
-      function byStandingsOrder(a, b) {
-        return b.points - a.points || String(a.player).localeCompare(String(b.player));
-      }
-
       function playerProfileLink(name) {
         const safeName = store.normalizeName(name);
         if (!safeName || safeName === "—") return "—";
@@ -203,8 +191,7 @@
             });
           } else {
             const standings = store.getOverallStandingsForTournament(state, tournament.id);
-            const sortedStandings = [...standings].sort(byStandingsOrder);
-            const rankedRows = getRankedOverallRows(sortedStandings);
+            const rankedRows = store.getRankedOverallRows(standings);
             firstPlace = placementText(rankedRows, 1);
             secondPlace = placementText(rankedRows, 2);
             thirdPlace = placementText(rankedRows, 3);

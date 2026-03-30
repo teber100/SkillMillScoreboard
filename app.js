@@ -1275,6 +1275,16 @@ function calculateGamePoints(rankedScores) {
   return withPoints;
 }
 
+function compareOverallRows(a, b) {
+  return (
+    b.points - a.points ||
+    b.firstPlaceFinishes - a.firstPlaceFinishes ||
+    b.secondPlaceFinishes - a.secondPlaceFinishes ||
+    b.thirdPlaceFinishes - a.thirdPlaceFinishes ||
+    String(a.player).localeCompare(String(b.player), undefined, { sensitivity: "base", numeric: true })
+  );
+}
+
 function getOverallStandingsForTournament(state, tournamentId) {
   const participatingPlayerIds = new Set(
     getSubmissionsForTournament(state, tournamentId)
@@ -1284,7 +1294,13 @@ function getOverallStandingsForTournament(state, tournamentId) {
   const totals = new Map();
   for (const player of state.players || []) {
     if (!participatingPlayerIds.has(player.id)) continue;
-    totals.set(player.id, { player: player.name, points: 0 });
+    totals.set(player.id, {
+      player: player.name,
+      points: 0,
+      firstPlaceFinishes: 0,
+      secondPlaceFinishes: 0,
+      thirdPlaceFinishes: 0,
+    });
   }
 
   const bestByGame = getBestScoresByGameForTournament(state, tournamentId, { activeOnly: true });
@@ -1293,10 +1309,15 @@ function getOverallStandingsForTournament(state, tournamentId) {
     for (const row of scored) {
       if (!totals.has(row.playerId)) continue;
       totals.get(row.playerId).points += row.points;
+      if (row.rank === 1) totals.get(row.playerId).firstPlaceFinishes += 1;
+      if (row.rank === 2) totals.get(row.playerId).secondPlaceFinishes += 1;
+      if (row.rank === 3) totals.get(row.playerId).thirdPlaceFinishes += 1;
     }
   }
 
-  return [...totals.values()].sort((a, b) => b.points - a.points || a.player.localeCompare(b.player));
+  // Example tie scenario:
+  // If Alex and Jamie both have 10 total points, Alex ranks higher when Alex has more game wins (rank 1 finishes).
+  return [...totals.values()].sort(compareOverallRows);
 }
 
 
@@ -1318,7 +1339,8 @@ function compareTournamentsByRecency(a, b) {
 function getRankedOverallRows(overallRows) {
   let rank = 1;
   return (overallRows || []).map((row, idx) => {
-    if (idx > 0 && row.points !== overallRows[idx - 1].points) {
+    const prev = overallRows[idx - 1];
+    if (idx > 0 && compareOverallRows(row, prev) !== 0) {
       rank = idx + 1;
     }
     return { ...row, rank };

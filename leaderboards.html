@@ -18,6 +18,10 @@
       </nav>
       <section class="card">
         <h1>Overall Standings</h1>
+        <label class="small subtle" style="display:inline-flex; gap:0.45rem; align-items:center; margin-bottom:0.75rem;">
+          <input id="tieBreakerToggle" type="checkbox" />
+          Show tie-breaker details
+        </label>
         <p id="participantsNote" class="small subtle"></p>
         <div class="table-wrap">
           <table>
@@ -26,6 +30,9 @@
                 <th>Rank</th>
                 <th>Player</th>
                 <th>Total Points</th>
+                <th data-tiebreaker-column hidden>1st</th>
+                <th data-tiebreaker-column hidden>2nd</th>
+                <th data-tiebreaker-column hidden>3rd</th>
               </tr>
             </thead>
             <tbody id="overallBody"></tbody>
@@ -42,29 +49,47 @@
     <script src="app.js"></script>
     <script>
       const store = window.TournamentStore;
+      const TIE_BREAKER_PREF_KEY = "skillmill_show_tie_breaker_details_v1";
 
-      async function renderPage() {
+      function readTieBreakerPreference() {
+        return localStorage.getItem(TIE_BREAKER_PREF_KEY) === "true";
+      }
+
+      function saveTieBreakerPreference(value) {
+        localStorage.setItem(TIE_BREAKER_PREF_KEY, value ? "true" : "false");
+      }
+
+      function updateTieBreakerColumnsVisibility(showDetails) {
+        document.querySelectorAll("[data-tiebreaker-column]").forEach((el) => {
+          el.hidden = !showDetails;
+        });
+      }
+
+      async function renderPage(showTieBreakerDetails) {
         const state = await store.loadState();
         const currentTournament = store.getCurrentTournamentFromState(state);
         if (!currentTournament) {
           document.getElementById("overallBody").innerHTML =
-            '<tr><td colspan="3">No active tournament is configured. Ask an admin to create/select one.</td></tr>';
+            '<tr><td colspan="6">No active tournament is configured. Ask an admin to create/select one.</td></tr>';
           const participantsNote = document.getElementById("participantsNote");
           if (participantsNote) participantsNote.textContent = "";
           document.getElementById("gameBoards").innerHTML = "";
           return;
         }
 
-        const overall = store.getOverallStandings(state);
+        const overall = store.getRankedOverallRows(store.getOverallStandings(state));
         const overallBody = document.getElementById("overallBody");
         const participantsNote = document.getElementById("participantsNote");
         if (participantsNote) {
           participantsNote.textContent = `Showing ${overall.length} participant${overall.length === 1 ? "" : "s"}`;
         }
         overallBody.innerHTML = "";
-        overall.forEach((row, idx) => {
+        overall.forEach((row) => {
           const tr = document.createElement("tr");
-          tr.innerHTML = `<td>${idx + 1}</td><td>${row.player}</td><td>${row.points}</td>`;
+          const tieBreakerCells = showTieBreakerDetails
+            ? `<td data-tiebreaker-column>${row.firstPlaceFinishes}</td><td data-tiebreaker-column>${row.secondPlaceFinishes}</td><td data-tiebreaker-column>${row.thirdPlaceFinishes}</td>`
+            : "";
+          tr.innerHTML = `<td>${row.rank}</td><td>${row.player}</td><td>${row.points}</td>${tieBreakerCells}`;
           overallBody.appendChild(tr);
         });
 
@@ -106,13 +131,23 @@
       (async () => {
         await store.initializeStore();
         const connection = store.getConnectionStatus();
+        const tieBreakerToggle = document.getElementById("tieBreakerToggle");
+        let showTieBreakerDetails = readTieBreakerPreference();
+        tieBreakerToggle.checked = showTieBreakerDetails;
+        updateTieBreakerColumnsVisibility(showTieBreakerDetails);
+        tieBreakerToggle.addEventListener("change", async () => {
+          showTieBreakerDetails = tieBreakerToggle.checked;
+          saveTieBreakerPreference(showTieBreakerDetails);
+          updateTieBreakerColumnsVisibility(showTieBreakerDetails);
+          await renderPage(showTieBreakerDetails);
+        });
         if (!connection.available) {
-          document.getElementById("overallBody").innerHTML = `<tr><td colspan="3">${store.escapeHtml(
+          document.getElementById("overallBody").innerHTML = `<tr><td colspan="6">${store.escapeHtml(
             connection.message
           )}</td></tr>`;
           return;
         }
-        await renderPage();
+        await renderPage(showTieBreakerDetails);
       })();
     </script>
   </body>
